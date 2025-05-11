@@ -11,6 +11,9 @@ def get_user(db: Session, user_id: int):
 def get_user_by_username(db: Session, username: str):
     return db.query(models.User).filter(models.User.username == username).first()
 
+def get_user_by_email(db: Session, email: str):
+    return db.query(models.User).filter(models.User.email == email).first()
+
 def get_users(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.User).offset(skip).limit(limit).all()
 
@@ -33,6 +36,23 @@ def create_topic(db: Session, topic: schemas.TopicCreate, user_id: int):
     db.refresh(db_topic)
     return db_topic
 
+def get_topic(db: Session, topic_id: int):
+    return db.query(models.Topic).filter(models.Topic.topic_id == topic_id).first()
+
+def update_topic(db: Session, topic_id: int, topic: schemas.TopicUpdate):
+    db_topic = get_topic(db, topic_id)
+    for key, value in topic.dict(exclude_unset=True).items():
+        setattr(db_topic, key, value)
+    db.commit()
+    db.refresh(db_topic)
+    return db_topic
+
+def delete_topic(db: Session, topic_id: int):
+    db_topic = get_topic(db, topic_id)
+    db.delete(db_topic)
+    db.commit()
+    return db_topic
+
 # Entry CRUD
 def get_entries(db: Session, user_id: int, skip: int = 0, limit: int = 100):
     return db.query(models.Entry).filter(models.Entry.user_id == user_id).offset(skip).limit(limit).all()
@@ -42,6 +62,23 @@ def create_entry(db: Session, entry: schemas.EntryCreate, user_id: int, topic_id
     db.add(db_entry)
     db.commit()
     db.refresh(db_entry)
+    return db_entry
+
+def get_entry(db: Session, entry_id: int):
+    return db.query(models.Entry).filter(models.Entry.entry_id == entry_id).first()
+
+def update_entry(db: Session, entry_id: int, entry: schemas.EntryUpdate):
+    db_entry = get_entry(db, entry_id)
+    for key, value in entry.dict(exclude_unset=True).items():
+        setattr(db_entry, key, value)
+    db.commit()
+    db.refresh(db_entry)
+    return db_entry
+
+def delete_entry(db: Session, entry_id: int):
+    db_entry = get_entry(db, entry_id)
+    db.delete(db_entry)
+    db.commit()
     return db_entry
 
 # File CRUD
@@ -83,4 +120,4 @@ def add_tag_to_entry(db: Session, entry_id: int, tag_id: int):
     if tag not in entry.tags:
         entry.tags.append(tag)
         db.commit()
-    return entry 
+    return entry

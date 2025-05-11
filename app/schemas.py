@@ -26,6 +26,9 @@ class TopicBase(BaseModel):
 class TopicCreate(TopicBase):
     pass
 
+class TopicUpdate(TopicBase):
+    pass
+
 class Topic(TopicBase):
     topic_id: int
     user_id: int
@@ -46,6 +49,9 @@ class EntryBase(BaseModel):
     is_public: bool = False
 
 class EntryCreate(EntryBase):
+    pass
+
+class EntryUpdate(EntryBase):
     pass
 
 class Entry(EntryBase):
@@ -113,4 +119,4 @@ class Token(BaseModel):
     token_type: str
 
 class TokenData(BaseModel):
-    username: Optional[str] = None 
+    username: Optional[str] = None

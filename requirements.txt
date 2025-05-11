@@ -6,4 +6,10 @@ alembic==1.11.1
 python-dotenv==1.0.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
-python-jose[cryptography]==3.3.0 
+python-jose[cryptography]==3.3.0
+requests==2.31.0
+charset-normalizer>=3.0.0
+chardet>=5.1.0
+idna>=3.4
+urllib3>=1.26.15
+certifi>=2023.5.7
