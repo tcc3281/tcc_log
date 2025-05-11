@@ -85,4 +85,8 @@ async def get_current_user(
 
 async def get_current_active_user(current_user: models.User = Depends(get_current_user)) -> models.User:
     # Here you can check user.is_active or other flags
+    return current_user
+
+@router.get("/me", response_model=schemas.User)
+async def read_users_me(current_user: models.User = Depends(get_current_active_user)):
     return current_user 
