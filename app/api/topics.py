@@ -6,7 +6,7 @@ from .. import crud, schemas, models
 from ..database import get_db
 from .auth import get_current_active_user
 
-router = APIRouter(prefix="/topics", tags=["topics"])
+router = APIRouter(tags=["topics"])
 
 @router.post("/", response_model=schemas.Topic)
 def create_topic(
@@ -57,4 +57,4 @@ def delete_topic(
     topic = crud.get_topic(db, topic_id)
     if topic is None or topic.user_id != current_user.user_id:
         raise HTTPException(status_code=404, detail="Topic not found")
-    return crud.delete_topic(db, topic_id) 
+    return crud.delete_topic(db, topic_id)
