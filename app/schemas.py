@@ -48,8 +48,15 @@ class EntryBase(BaseModel):
     weather: Optional[str] = None
     is_public: bool = False
 
-class EntryCreate(EntryBase):
-    pass
+class EntryCreate(BaseModel):
+    topic_id: int
+    title: str
+    content: Optional[str] = None
+    entry_date: str
+    location: Optional[str] = None
+    mood: Optional[str] = None
+    weather: Optional[str] = None
+    is_public: bool
 
 class EntryUpdate(EntryBase):
     pass

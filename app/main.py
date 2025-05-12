@@ -54,29 +54,16 @@ app = FastAPI(
     openapi_url="/openapi.json"
 )
 
-# Define CORS origins explicitly
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    # Add these versions to handle different protocol patterns
-    "https://localhost:3000",
-    "https://127.0.0.1:3000",
-    # For development, allow all origins
-    "*"
-]
-
 # Add request logging middleware first
 app.add_middleware(RequestLoggingMiddleware)
 
 # Add CORS middleware with explicit method configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Process-Time", "Content-Type", "Content-Length", "Access-Control-Allow-Origin"],
-    max_age=86400,  # Cache preflight requests for 24 hours
 )
 
 # Global handler for all OPTIONS requests - FIX: change the path to avoid conflicts
@@ -125,7 +112,7 @@ async def debug_routes():
 app.include_router(auth.router)
 app.include_router(users.router, prefix="/users")  # Add explicit prefix
 app.include_router(topics.router, prefix="/topics")  # Add explicit prefix
-app.include_router(entries.router, prefix="/entries")  # Add explicit prefix
+app.include_router(entries.router, prefix="/entries")  # Ensure this line exists
 app.include_router(files.router, prefix="/files")  # Add explicit prefix
 app.include_router(links.router, prefix="/links")  # Add explicit prefix
 app.include_router(tags.router, prefix="/tags")  # Add explicit prefix
@@ -141,7 +128,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Initialize database tables
 @app.on_event("startup")
-def startup_event():
+async def startup_event():
     logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
     logger.info("Database initialization complete")
@@ -152,3 +139,7 @@ def startup_event():
         methods = getattr(route, "methods", set())
         method_str = ', '.join(methods) if methods else 'No methods'
         logger.info(f"{method_str} - {route.path}")
+
+    print("Registered routes:")
+    for route in app.routes:
+        print(f"{route.path} - {route.methods}")
