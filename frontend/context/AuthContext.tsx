@@ -36,6 +36,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   useEffect(() => {
     const loadUserFromStorage = async () => {
       try {
+        setIsLoading(true);
         const storedUser = localStorage.getItem('user');
         const storedToken = localStorage.getItem('token');
         
@@ -44,13 +45,20 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           setUser(parsedUser);
           setToken(storedToken);
           
+          // *** QUAN TRỌNG: Áp dụng token cho tất cả các request API trong tương lai ***
+          api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+          console.log('Restored auth token from localStorage:', `Bearer ${storedToken.substring(0, 15)}...`);
+          
           // Validate token by calling the user endpoint
           try {
-            await axios.get(`${apiUrl}/users/me`, {
-              headers: {
-                'Authorization': `Bearer ${storedToken}`
-              }
-            });
+            const response = await api.get(`/users/me`);
+            console.log('Token validation successful:', response.data);
+            
+            // Cập nhật thông tin người dùng nếu cần
+            if (response.data && response.data.user_id) {
+              setUser(response.data);
+              localStorage.setItem('user', JSON.stringify(response.data));
+            }
           } catch (error) {
             console.error('Error validating token:', error);
             // Token is invalid, clear storage
@@ -58,13 +66,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             localStorage.removeItem('token');
             setUser(null);
             setToken(null);
+            delete api.defaults.headers.common['Authorization'];
+            console.log('Invalid token - cleared auth state');
           }
+        } else {
+          console.log('No stored credentials found');
         }
       } catch (err) {
         console.error('Error loading user from storage:', err);
         // Clear possibly corrupted storage
         localStorage.removeItem('user');
         localStorage.removeItem('token');
+        delete api.defaults.headers.common['Authorization'];
       } finally {
         setIsLoading(false);
       }
@@ -85,7 +98,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     // Set authorization header for all future requests
     api.defaults.headers.common['Authorization'] = `Bearer ${authToken}`;
     
-    console.log('Logged in successfully:', userData, authToken);
+    console.log('Logged in successfully:', userData, `Bearer ${authToken.substring(0, 15)}...`);
   };
 
   const logout = () => {

@@ -3,12 +3,18 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.staticfiles import StaticFiles
 import time
 import asyncio
+import os
 
 from .database import engine, Base
 from . import models
 from .api import users, topics, entries, files, links, tags, auth
+
+# Tạo thư mục uploads nếu chưa tồn tại
+uploads_dir = "uploads"
+os.makedirs(uploads_dir, exist_ok=True)
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -65,6 +71,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount uploads directory to serve static files
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 # Global handler for all OPTIONS requests - FIX: change the path to avoid conflicts
 @app.options("/api-options/{path:path}")
@@ -142,4 +151,12 @@ async def startup_event():
 
     print("Registered routes:")
     for route in app.routes:
-        print(f"{route.path} - {route.methods}")
+        # Check if route has a path and methods attributes
+        if hasattr(route, "path"):
+            methods = getattr(route, "methods", "No methods")
+            methods_str = methods if isinstance(methods, str) else str(methods)
+            print(f"{route.path} - {methods_str}")
+        else:
+            # For Mount objects or other special routes
+            name = getattr(route, "name", "Unknown")
+            print(f"Special route: {name}")
