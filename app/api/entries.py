@@ -6,20 +6,18 @@ from .. import crud, schemas, models
 from ..database import get_db
 from .auth import get_current_active_user
 
-router = APIRouter(prefix="/entries", tags=["entries"])
+router = APIRouter(tags=["entries"])
 
 @router.post("/", response_model=schemas.Entry)
 def create_entry(
-    entry: schemas.EntryCreate, 
-    topic_id: int,
+    entry: schemas.EntryCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user)
+    current_user: models.User = Depends(get_current_active_user),
 ):
-    # Verify topic belongs to user
-    topic = crud.get_topic(db, topic_id)
-    if topic is None or topic.user_id != current_user.user_id:
+    # Ensure get_topic is called with topic_id and user_id
+    if not crud.get_topic(db, topic_id=entry.topic_id, user_id=current_user.user_id):
         raise HTTPException(status_code=404, detail="Topic not found")
-    return crud.create_entry(db, entry, current_user.user_id, topic_id)
+    return crud.create_entry(db=db, entry=entry, user_id=current_user.user_id)
 
 @router.get("/", response_model=List[schemas.Entry])
 def read_entries(
@@ -62,4 +60,4 @@ def delete_entry(
     entry = crud.get_entry(db, entry_id)
     if entry is None or entry.user_id != current_user.user_id:
         raise HTTPException(status_code=404, detail="Entry not found")
-    return crud.delete_entry(db, entry_id) 
+    return crud.delete_entry(db, entry_id)

@@ -36,8 +36,11 @@ def create_topic(db: Session, topic: schemas.TopicCreate, user_id: int):
     db.refresh(db_topic)
     return db_topic
 
-def get_topic(db: Session, topic_id: int):
-    return db.query(models.Topic).filter(models.Topic.topic_id == topic_id).first()
+def get_topic(db: Session, topic_id: int, user_id: int):
+    return db.query(models.Topic).filter(
+        models.Topic.topic_id == topic_id,
+        models.Topic.user_id == user_id
+    ).first()
 
 def update_topic(db: Session, topic_id: int, topic: schemas.TopicUpdate):
     db_topic = get_topic(db, topic_id)
@@ -57,8 +60,18 @@ def delete_topic(db: Session, topic_id: int):
 def get_entries(db: Session, user_id: int, skip: int = 0, limit: int = 100):
     return db.query(models.Entry).filter(models.Entry.user_id == user_id).offset(skip).limit(limit).all()
 
-def create_entry(db: Session, entry: schemas.EntryCreate, user_id: int, topic_id: int):
-    db_entry = models.Entry(**entry.dict(), user_id=user_id, topic_id=topic_id)
+def create_entry(db: Session, entry: schemas.EntryCreate, user_id: int):
+    db_entry = models.Entry(
+        user_id=user_id,
+        topic_id=entry.topic_id,
+        title=entry.title,
+        content=entry.content,
+        entry_date=entry.entry_date,
+        location=entry.location,
+        mood=entry.mood,
+        weather=entry.weather,
+        is_public=entry.is_public,
+    )
     db.add(db_entry)
     db.commit()
     db.refresh(db_entry)
