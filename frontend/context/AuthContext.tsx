@@ -1,116 +1,120 @@
 'use client';
-import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import api from '../lib/api';
-import { useRouter } from 'next/navigation';
+import axios from 'axios';
 
-// Define the user type
-export type User = { user_id: number; username: string; email: string };
+// Define types
+interface User {
+  user_id: number;
+  username: string;
+  email: string;
+}
 
-// Define the context type
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (userData: User, token: string) => void;
   logout: () => void;
-  register: (username: string, email: string, password: string) => Promise<void>;
+  isLoading: boolean;
 }
 
-// Create context
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+// Create context with proper typing
+const AuthContext = createContext<AuthContextType | null>(null);
 
-// Provider component
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
+// Provider component with proper props typing
+interface AuthProviderProps {
+  children: ReactNode;
+}
+
+export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
-  // Set mounted state to true when component mounts on client
+  // Load user from localStorage on initial render
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Initialize auth state from localStorage on client-side only
-  useEffect(() => {
-    if (mounted) {
-      const storedToken = localStorage.getItem('auth_token');
-      if (storedToken) {
-        setToken(storedToken);
-        api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-        api.get('/auth/me')
-          .then(response => {
-            setUser(response.data);
-          })
-          .catch(() => {
-            localStorage.removeItem('auth_token');
-            delete api.defaults.headers.common['Authorization'];
-          })
-          .finally(() => {
-            setLoading(false);
-          });
-      } else {
-        setLoading(false);
+    const loadUserFromStorage = async () => {
+      try {
+        const storedUser = localStorage.getItem('user');
+        const storedToken = localStorage.getItem('token');
+        
+        if (storedUser && storedToken) {
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+          setToken(storedToken);
+          
+          // Validate token by calling the user endpoint
+          try {
+            await axios.get(`${apiUrl}/users/me`, {
+              headers: {
+                'Authorization': `Bearer ${storedToken}`
+              }
+            });
+          } catch (error) {
+            console.error('Error validating token:', error);
+            // Token is invalid, clear storage
+            localStorage.removeItem('user');
+            localStorage.removeItem('token');
+            setUser(null);
+            setToken(null);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading user from storage:', err);
+        // Clear possibly corrupted storage
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+      } finally {
+        setIsLoading(false);
       }
-    }
-  }, [mounted]);
+    };
 
-  // Only proceed with rendering children after client-side hydration
-  if (!mounted) {
-    return null; // Return null or a loading placeholder for initial server render
-  }
+    loadUserFromStorage();
+  }, [apiUrl]);
 
-  const login = async (username: string, password: string) => {
-    try {
-      const response = await api.post(
-        '/auth/token',
-        new URLSearchParams({ username, password }),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
-      );
-      const { access_token } = response.data;
-      setToken(access_token);
-      localStorage.setItem('auth_token', access_token);
-      api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
-      const meResponse = await api.get('/auth/me');
-      setUser(meResponse.data);
-      router.push('/topics');
-    } catch (error) {
-      console.error('Login failed:', error);
-      throw error;
-    }
-  };
-
-  const register = async (username: string, email: string, password: string) => {
-    try {
-      await api.post('/users', { username, email, password });
-      router.push('/login');
-    } catch (error) {
-      console.error('Registration failed:', error);
-      throw error;
-    }
+  const login = (userData: User, authToken: string) => {
+    // Save user to state
+    setUser(userData);
+    setToken(authToken);
+    
+    // Save to localStorage for persistence
+    localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem('token', authToken);
+    
+    // Set authorization header for all future requests
+    api.defaults.headers.common['Authorization'] = `Bearer ${authToken}`;
+    
+    console.log('Logged in successfully:', userData, authToken);
   };
 
   const logout = () => {
-    setToken(null);
+    // Clear state
     setUser(null);
-    localStorage.removeItem('auth_token');
+    setToken(null);
+    
+    // Clear localStorage
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+    
+    // Remove authorization header
     delete api.defaults.headers.common['Authorization'];
-    router.push('/login');
+    
+    console.log('Logged out successfully');
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, register }}>
-      {!loading ? children : null}
+    <AuthContext.Provider value={{ user, token, login, logout, isLoading }}>
+      {children}
     </AuthContext.Provider>
   );
 };
 
-// Custom hook
-export const useAuth = () => {
+// Custom hook with proper return type
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 };

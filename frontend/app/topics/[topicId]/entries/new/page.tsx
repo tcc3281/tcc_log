@@ -17,13 +17,29 @@ const NewEntryPage = () => {
   const [mood, setMood] = useState('');
   const [weather, setWeather] = useState('');
   const [isPublic, setIsPublic] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !topicId) return;
+    
+    if (!title.trim()) {
+      setError('Title is required');
+      return;
+    }
+    
+    if (!entryDate) {
+      setError('Date is required');
+      return;
+    }
+
     try {
-      await api.post('/entries', {
-        user_id: user.user_id,
+      setLoading(true);
+      setError(null);
+      
+      // The API endpoint needs topic_id but not user_id (it comes from auth token)
+      const response = await api.post('/entries', {
         topic_id: Number(topicId),
         title,
         content,
@@ -33,15 +49,36 @@ const NewEntryPage = () => {
         weather,
         is_public: isPublic,
       });
+      
       router.push(`/topics/${topicId}/entries`);
-    } catch (error) {
-      console.error('Error creating entry:', error);
+    } catch (err) {
+      console.error('Error creating entry:', err);
+      setError('Failed to create entry. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
+  if (!user) return <p>Please log in to create entries</p>;
+
   return (
     <main className="container mx-auto mt-10">
+      {/* Back Button */}
+      <button
+        onClick={() => router.back()}
+        className="mb-4 bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300"
+      >
+        Back
+      </button>
+
       <h1 className="text-2xl font-bold mb-4">New Entry</h1>
+      
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          {error}
+        </div>
+      )}
+      
       <form onSubmit={handleSubmit} className="flex gap-8">
         {/* Left Pane */}
         <div className="w-1/3 flex flex-col gap-4 border-r pr-4">
@@ -98,8 +135,12 @@ const NewEntryPage = () => {
             />
             Public
           </label>
-          <button type="submit" className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600">
-            Save Entry
+          <button 
+            type="submit" 
+            className={`${loading ? 'bg-blue-300' : 'bg-blue-500 hover:bg-blue-600'} text-white p-2 rounded`}
+            disabled={loading}
+          >
+            {loading ? 'Saving...' : 'Save Entry'}
           </button>
         </div>
 
