@@ -1,0 +1,27 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package.json and package-lock.json
+COPY frontend/package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy Next.js configuration
+COPY frontend/next.config.js ./
+
+# Copy the rest of the application
+COPY frontend/ ./
+
+# Create .env.local file with the API URL pointing to the backend service
+RUN echo "NEXT_PUBLIC_API_URL=http://backend:8000" > .env.local
+
+# Build the application with ESLint checks disabled
+RUN npm run build
+
+# Expose the port the app runs on
+EXPOSE 3000
+
+# Command to run the application
+CMD ["npm", "start"]

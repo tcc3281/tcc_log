@@ -30,44 +30,70 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-
-  // Load user from localStorage on initial render
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';  // Load user from localStorage on initial render
   useEffect(() => {
     const loadUserFromStorage = async () => {
       try {
         setIsLoading(true);
         const storedUser = localStorage.getItem('user');
         const storedToken = localStorage.getItem('token');
+        const loginTimestamp = localStorage.getItem('login_timestamp');
         
         if (storedUser && storedToken) {
           const parsedUser = JSON.parse(storedUser);
+          
+          // Apply the token to all future API requests
+          api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+          
+          // Log a cleaner token preview for debugging
+          const tokenPreview = storedToken.length > 20 
+            ? `${storedToken.substring(0, 10)}...${storedToken.substring(storedToken.length - 5)}`
+            : storedToken.substring(0, 15) + '...';
+          console.log('Restored auth token from localStorage:', `Bearer ${tokenPreview}`);
+          
+          // Always set the user and token from localStorage first to prevent flickering UI
+          // This provides a smoother UX while we validate in the background
           setUser(parsedUser);
           setToken(storedToken);
-          
-          // *** QUAN TRỌNG: Áp dụng token cho tất cả các request API trong tương lai ***
-          api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-          console.log('Restored auth token from localStorage:', `Bearer ${storedToken.substring(0, 15)}...`);
           
           // Validate token by calling the user endpoint
           try {
             const response = await api.get(`/users/me`);
             console.log('Token validation successful:', response.data);
             
-            // Cập nhật thông tin người dùng nếu cần
+            // Update user info if needed
             if (response.data && response.data.user_id) {
-              setUser(response.data);
-              localStorage.setItem('user', JSON.stringify(response.data));
+              // Update user data if it's different from what we have
+              if (JSON.stringify(parsedUser) !== JSON.stringify(response.data)) {
+                setUser(response.data);
+                localStorage.setItem('user', JSON.stringify(response.data));
+                console.log('User info updated from API');
+              }
+              
+              // Update login timestamp
+              if (!loginTimestamp) {
+                localStorage.setItem('login_timestamp', Date.now().toString());
+              }
+            } else {
+              throw new Error('Invalid user data received from API');
             }
-          } catch (error) {
+          } catch (error: any) {
             console.error('Error validating token:', error);
-            // Token is invalid, clear storage
-            localStorage.removeItem('user');
-            localStorage.removeItem('token');
-            setUser(null);
-            setToken(null);
-            delete api.defaults.headers.common['Authorization'];
-            console.log('Invalid token - cleared auth state');
+            
+            // Only clear auth if the error is authentication related (401)
+            if (error.response && error.response.status === 401) {
+              // Token is invalid or expired, clear storage
+              localStorage.removeItem('user');
+              localStorage.removeItem('token');
+              localStorage.removeItem('login_timestamp');
+              setUser(null);
+              setToken(null);
+              delete api.defaults.headers.common['Authorization'];
+              console.log('Invalid token - cleared auth state');
+            } else {
+              // For other errors, keep the user logged in
+              console.log('Network or server error, keeping user logged in');
+            }
           }
         } else {
           console.log('No stored credentials found');
@@ -77,7 +103,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         // Clear possibly corrupted storage
         localStorage.removeItem('user');
         localStorage.removeItem('token');
+        localStorage.removeItem('login_timestamp');
         delete api.defaults.headers.common['Authorization'];
+        setUser(null);
+        setToken(null);
       } finally {
         setIsLoading(false);
       }
@@ -95,20 +124,23 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     localStorage.setItem('user', JSON.stringify(userData));
     localStorage.setItem('token', authToken);
     
+    // Save the login timestamp
+    localStorage.setItem('login_timestamp', Date.now().toString());
+    
     // Set authorization header for all future requests
     api.defaults.headers.common['Authorization'] = `Bearer ${authToken}`;
     
     console.log('Logged in successfully:', userData, `Bearer ${authToken.substring(0, 15)}...`);
   };
-
   const logout = () => {
     // Clear state
     setUser(null);
     setToken(null);
     
-    // Clear localStorage
+    // Clear all auth data from localStorage
     localStorage.removeItem('user');
     localStorage.removeItem('token');
+    localStorage.removeItem('login_timestamp');
     
     // Remove authorization header
     delete api.defaults.headers.common['Authorization'];
