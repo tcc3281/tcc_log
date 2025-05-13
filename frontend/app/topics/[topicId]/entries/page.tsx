@@ -12,6 +12,16 @@ interface Entry {
   is_public: boolean;
   content?: string;
   topic_id: number;
+  location?: string;
+  weather?: string;
+  mood?: string;
+}
+
+// Define unique filter options
+interface FilterOptions {
+  locations: string[];
+  weathers: string[];
+  moods: string[];
 }
 
 const EntriesPage = () => {
@@ -20,9 +30,76 @@ const EntriesPage = () => {
   const router = useRouter();
   const topicId = params?.topicId;
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [filteredEntries, setFilteredEntries] = useState<Entry[]>([]);
   const [topicName, setTopicName] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Filter states
+  const [filterTitle, setFilterTitle] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+  const [filterLocation, setFilterLocation] = useState('');
+  const [filterWeather, setFilterWeather] = useState('');
+  const [filterMood, setFilterMood] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
+    locations: [],
+    weathers: [],
+    moods: []
+  });
+  // Effect to apply filters whenever entries or filter values change
+  useEffect(() => {
+    if (entries.length === 0) {
+      setFilteredEntries([]);
+      return;
+    }
+    
+    let results = [...entries];
+    
+    // Filter by title
+    if (filterTitle) {
+      results = results.filter(entry => 
+        entry.title.toLowerCase().includes(filterTitle.toLowerCase())
+      );
+    }
+    
+    // Filter by date range
+    if (filterStartDate) {
+      results = results.filter(entry => 
+        new Date(entry.entry_date) >= new Date(filterStartDate)
+      );
+    }
+    
+    if (filterEndDate) {
+      results = results.filter(entry => 
+        new Date(entry.entry_date) <= new Date(filterEndDate)
+      );
+    }
+    
+    // Filter by location
+    if (filterLocation) {
+      results = results.filter(entry => 
+        entry.location === filterLocation
+      );
+    }
+    
+    // Filter by weather
+    if (filterWeather) {
+      results = results.filter(entry => 
+        entry.weather === filterWeather
+      );
+    }
+    
+    // Filter by mood
+    if (filterMood) {
+      results = results.filter(entry => 
+        entry.mood === filterMood
+      );
+    }
+    
+    setFilteredEntries(results);
+  }, [entries, filterTitle, filterStartDate, filterEndDate, filterLocation, filterWeather, filterMood]);
 
   useEffect(() => {
     if (!user || !topicId) return;
@@ -73,11 +150,9 @@ const EntriesPage = () => {
                 entry.topic_id === Number(topicId)
               );
             }
-          }
-          
-          // Đảm bảo entries thuộc về topic hiện tại
+          }            // Đảm bảo entries thuộc về topic hiện tại
           if (Array.isArray(entriesData)) {
-            const filteredEntries = entriesData.filter(entry => {
+            const topicEntries = entriesData.filter(entry => {
               // Nếu entry có topic_id, kiểm tra nó có khớp với topicId hiện tại
               if (entry.topic_id !== undefined) {
                 return entry.topic_id === Number(topicId);
@@ -85,11 +160,39 @@ const EntriesPage = () => {
               return true; // Nếu không có topic_id, giữ lại (backend đã lọc)
             });
             
-            console.log(`Found ${filteredEntries.length} entries for topic ID ${topicId}`);
-            setEntries(filteredEntries);
+            console.log(`Found ${topicEntries.length} entries for topic ID ${topicId}`);
+            
+            // Extract unique filter options
+            const locations = Array.from(new Set(
+              topicEntries
+                .filter(entry => entry.location)
+                .map(entry => entry.location as string)
+            )).sort();
+            
+            const weathers = Array.from(new Set(
+              topicEntries
+                .filter(entry => entry.weather)
+                .map(entry => entry.weather as string)
+            )).sort();
+            
+            const moods = Array.from(new Set(
+              topicEntries
+                .filter(entry => entry.mood)
+                .map(entry => entry.mood as string)
+            )).sort();
+            
+            setFilterOptions({
+              locations,
+              weathers,
+              moods
+            });
+            
+            setEntries(topicEntries);
+            setFilteredEntries(topicEntries);
           } else {
             console.error('Entries data is not an array:', entriesData);
             setEntries([]);
+            setFilteredEntries([]);
           }
         } catch (entriesErr: any) {
           console.error(`Error fetching entries: ${entriesErr.message}`);
@@ -205,27 +308,144 @@ const EntriesPage = () => {
           </svg>
           Back to Topics
         </button>
-      </div>
-
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
+      </div>      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">{topicName || 'Entries'}</h1>
           <p className="text-gray-600 dark:text-gray-400 text-sm">
-            {entries.length} {entries.length === 1 ? 'entry' : 'entries'} found
+            {filteredEntries.length} {filteredEntries.length === 1 ? 'entry' : 'entries'} 
+            {entries.length !== filteredEntries.length && ` (filtered from ${entries.length})`}
           </p>
         </div>
-        <Link 
-          href={`/topics/${topicId}/entries/new`}
-          className="btn btn-primary flex items-center justify-center gap-2 sm:justify-start"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-          </svg>
-          Create New Entry
-        </Link>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="btn btn-secondary flex items-center justify-center gap-1"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 11.414V15a1 1 0 01-.293.707l-2 2A1 1 0 018 17v-5.586L3.293 6.707A1 1 0 013 6V3z" clipRule="evenodd" />
+            </svg>
+            {showFilters ? 'Hide Filters' : 'Show Filters'}
+          </button>
+          <Link 
+            href={`/topics/${topicId}/entries/new`}
+            className="btn btn-primary flex items-center justify-center gap-1"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+            </svg>
+            New Entry
+          </Link>
+        </div>
       </div>
       
-      {entries.length === 0 ? (
+      {showFilters && (
+        <div className="card p-4 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Filter Entries</h2>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Title filter */}
+            <div>
+              <label htmlFor="filterTitle" className="form-label">Title</label>
+              <input
+                id="filterTitle"
+                type="text"
+                placeholder="Filter by title"
+                value={filterTitle}
+                onChange={(e) => setFilterTitle(e.target.value)}
+                className="form-input"
+              />
+            </div>
+            
+            {/* Date range filter */}
+            <div>
+              <label htmlFor="filterStartDate" className="form-label">From Date</label>
+              <input
+                id="filterStartDate"
+                type="date"
+                value={filterStartDate}
+                onChange={(e) => setFilterStartDate(e.target.value)}
+                className="form-input"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="filterEndDate" className="form-label">To Date</label>
+              <input
+                id="filterEndDate"
+                type="date"
+                value={filterEndDate}
+                onChange={(e) => setFilterEndDate(e.target.value)}
+                className="form-input"
+              />
+            </div>
+            
+            {/* Location filter */}
+            <div>
+              <label htmlFor="filterLocation" className="form-label">Location</label>
+              <select
+                id="filterLocation"
+                value={filterLocation}
+                onChange={(e) => setFilterLocation(e.target.value)}
+                className="form-input"
+              >
+                <option value="">All Locations</option>
+                {filterOptions.locations.map((location) => (
+                  <option key={location} value={location}>{location}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Weather filter */}
+            <div>
+              <label htmlFor="filterWeather" className="form-label">Weather</label>
+              <select
+                id="filterWeather"
+                value={filterWeather}
+                onChange={(e) => setFilterWeather(e.target.value)}
+                className="form-input"
+              >
+                <option value="">All Weather</option>
+                {filterOptions.weathers.map((weather) => (
+                  <option key={weather} value={weather}>{weather}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Mood filter */}
+            <div>
+              <label htmlFor="filterMood" className="form-label">Mood</label>
+              <select
+                id="filterMood"
+                value={filterMood}
+                onChange={(e) => setFilterMood(e.target.value)}
+                className="form-input"
+              >
+                <option value="">All Moods</option>
+                {filterOptions.moods.map((mood) => (
+                  <option key={mood} value={mood}>{mood}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={() => {
+                setFilterTitle('');
+                setFilterStartDate('');
+                setFilterEndDate('');
+                setFilterLocation('');
+                setFilterWeather('');
+                setFilterMood('');
+              }}
+              className="btn btn-secondary"
+            >
+              Clear Filters
+            </button>
+          </div>
+        </div>
+      )}
+        {entries.length === 0 ? (
         <div className="card p-8 text-center">
           <div className="flex flex-col items-center mb-4">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-300 dark:text-gray-600 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -242,9 +462,33 @@ const EntriesPage = () => {
             </Link>
           </div>
         </div>
+      ) : filteredEntries.length === 0 ? (
+        <div className="card p-8 text-center">
+          <div className="flex flex-col items-center mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-300 dark:text-gray-600 mb-4" fill="none" viewBox="0 0 20 20" stroke="currentColor">
+              <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 11.414V15a1 1 0 01-.293.707l-2 2A1 1 0 018 17v-5.586L3.293 6.707A1 1 0 013 6V3z" clipRule="evenodd" />
+            </svg>
+            <p className="text-gray-500 dark:text-gray-400 text-lg mb-6">
+              No entries match your filters.
+            </p>
+            <button 
+              onClick={() => {
+                setFilterTitle('');
+                setFilterStartDate('');
+                setFilterEndDate('');
+                setFilterLocation('');
+                setFilterWeather('');
+                setFilterMood('');
+              }}
+              className="btn btn-secondary"
+            >
+              Clear Filters
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {entries.map((entry) => {
+          {filteredEntries.map((entry) => {
             // Format date for display
             const formattedDate = new Date(entry.entry_date).toLocaleDateString('en-US', {
               year: 'numeric', 
@@ -254,8 +498,7 @@ const EntriesPage = () => {
             
             return (
               <div key={entry.entry_id} className="card hover:shadow-lg transition-shadow">
-                <div className="p-6">
-                  <div className="flex justify-between items-start mb-2">
+                <div className="p-6">                  <div className="flex justify-between items-start mb-2">
                     <h2 className="text-xl font-semibold text-gray-900 dark:text-white">{entry.title}</h2>
                     {entry.is_public && (
                       <span className="text-xs px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400 rounded-full">
@@ -263,7 +506,37 @@ const EntriesPage = () => {
                       </span>
                     )}
                   </div>
-                  <p className="text-gray-500 dark:text-gray-400 mb-4 text-sm">{formattedDate}</p>
+                  <p className="text-gray-500 dark:text-gray-400 mb-3 text-sm">{formattedDate}</p>
+                  
+                  <div className="space-y-1 mb-3">
+                    {entry.location && (
+                      <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        {entry.location}
+                      </div>
+                    )}
+                    
+                    {entry.weather && (
+                      <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                        </svg>
+                        {entry.weather}
+                      </div>
+                    )}
+                    
+                    {entry.mood && (
+                      <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {entry.mood}
+                      </div>
+                    )}
+                  </div>
                   
                   <Link 
                     href={`/topics/${topicId}/entries/${entry.entry_id}`}
@@ -284,4 +557,4 @@ const EntriesPage = () => {
   );
 };
 
-export default EntriesPage; 
+export default EntriesPage;

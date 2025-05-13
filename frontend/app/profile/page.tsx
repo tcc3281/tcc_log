@@ -12,8 +12,15 @@ interface FormData {
   confirmPassword: string;
 }
 
+// Define User interface to match AuthContext
+interface User {
+  user_id: number;
+  username: string;
+  email: string;
+}
+
 export default function ProfilePage() {
-  const { user, updateUserInfo } = useAuth();
+  const { user, login } = useAuth();
   const router = useRouter();
   
   const [formData, setFormData] = useState<FormData>({
@@ -97,18 +104,23 @@ export default function ProfilePage() {
         updateData.current_password = formData.password;
         updateData.new_password = formData.newPassword;
       }
-      
-      if (user?.id) {
+        if (user?.user_id) {
         // Make the actual API call to update user info
         const response = await api.patch(`/users/me`, updateData);
         
         // Update auth context with the new user info
-        if (response.data && updateUserInfo) {
-          updateUserInfo({
-            ...user,
-            username: formData.username,
-            email: formData.email
-          });
+        if (response.data) {
+          // Save the token from localStorage
+          const token = localStorage.getItem('token');
+          
+          if (token) {
+            // Update the user info using the login function
+            login({
+              ...user,
+              username: formData.username,
+              email: formData.email
+            }, token);
+          }
         }
         
         setSuccess('Profile updated successfully!');

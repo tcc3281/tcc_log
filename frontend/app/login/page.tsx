@@ -122,11 +122,10 @@ const LoginPage = () => {
             />
           </div>
             <button 
-            type="submit" 
-            className={`w-full py-3 font-medium rounded-md shadow-md transition-colors ${
+            type="submit"            className={`w-full py-3 font-medium rounded-md shadow-md transition-colors ${
               isSubmitting 
-                ? 'bg-indigo-400 cursor-not-allowed' 
-                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                ? 'bg-blue-400 cursor-not-allowed' 
+                : 'bg-blue-600 hover:bg-blue-700 text-white'
             }`}
             disabled={isSubmitting}
           >
@@ -143,8 +142,7 @@ const LoginPage = () => {
         </form>
           <div className="mt-8 text-center border-t border-gray-200 dark:border-gray-700 pt-6">
           <p className="text-gray-600 dark:text-gray-400">
-            Don't have an account? {' '}
-            <Link href="/register" className="text-indigo-600 dark:text-indigo-400 hover:underline font-medium">
+            Don't have an account? {' '}            <Link href="/register" className="text-blue-600 dark:text-blue-400 hover:underline font-medium">
               Create an account
             </Link>
           </p>

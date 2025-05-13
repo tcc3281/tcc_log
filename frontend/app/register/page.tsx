@@ -89,51 +89,47 @@ const RegisterPage = () => {
         </div>
       )}
       
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">        <div>
-          <label htmlFor="username" className="block mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">Username</label><input
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">        <div>          <label htmlFor="username" className="block mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">Username</label><input
             id="username"
             type="text"
             placeholder="Choose a username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             required
             disabled={isSubmitting}
           />
         </div>
-          <div>
-          <label htmlFor="email" className="block mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">Email</label><input
+          <div>          <label htmlFor="email" className="block mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">Email</label><input
             id="email"
             type="email"
             placeholder="Enter your email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             required
             disabled={isSubmitting}
           />
         </div>
-          <div>
-          <label htmlFor="password" className="block mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">Password</label><input
+          <div>          <label htmlFor="password" className="block mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">Password</label><input
             id="password"
             type="password"
             placeholder="Create a password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             required
             disabled={isSubmitting}
           />
           <p className="text-xs mt-1 text-gray-500 dark:text-gray-400">Password must be at least 6 characters long</p>
         </div>
-          <div>
-          <label htmlFor="confirmPassword" className="block mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">Confirm Password</label><input
+          <div>          <label htmlFor="confirmPassword" className="block mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">Confirm Password</label><input
             id="confirmPassword"
             type="password"
             placeholder="Confirm your password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             required
             disabled={isSubmitting}
           />
@@ -151,7 +147,7 @@ const RegisterPage = () => {
         </button>
       </form>
         <p className="mt-6 text-center">
-        Already have an account? <Link href="/login" className="text-indigo-600 hover:underline font-medium">Login</Link>
+        Already have an account? <Link href="/login" className="text-blue-600 hover:underline font-medium">Login</Link>
       </p>    </div>
     </div>
   );
