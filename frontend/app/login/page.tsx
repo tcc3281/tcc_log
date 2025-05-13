@@ -14,9 +14,17 @@ const LoginPage = () => {
   const router = useRouter();
   
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-
-  // Redirect if already logged in
+  // Redirect if already logged in and handle session expiration messages
   useEffect(() => {
+    // Check for session expired message in URL
+    const searchParams = new URLSearchParams(window.location.search);
+    const sessionExpired = searchParams.get('session_expired');
+    
+    if (sessionExpired === 'true' && !error) {
+      setError('Your session has expired. Please log in again.');
+    }
+    
+    // Redirect if already logged in
     if (!isLoading && user) {
       router.push('/topics');
     }
@@ -113,10 +121,13 @@ const LoginPage = () => {
               disabled={isSubmitting}
             />
           </div>
-          
-          <button 
+            <button 
             type="submit" 
-            className={`w-full btn ${isSubmitting ? 'bg-blue-400 cursor-not-allowed' : 'btn-primary'}`}
+            className={`w-full py-3 font-medium rounded-md shadow-md transition-colors ${
+              isSubmitting 
+                ? 'bg-indigo-400 cursor-not-allowed' 
+                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+            }`}
             disabled={isSubmitting}
           >
             {isSubmitting ? (
@@ -130,11 +141,10 @@ const LoginPage = () => {
             ) : 'Log In'}
           </button>
         </form>
-        
-        <div className="mt-8 text-center border-t border-gray-200 dark:border-gray-700 pt-6">
+          <div className="mt-8 text-center border-t border-gray-200 dark:border-gray-700 pt-6">
           <p className="text-gray-600 dark:text-gray-400">
             Don't have an account? {' '}
-            <Link href="/register" className="text-blue-600 dark:text-blue-400 hover:underline font-medium">
+            <Link href="/register" className="text-indigo-600 dark:text-indigo-400 hover:underline font-medium">
               Create an account
             </Link>
           </p>

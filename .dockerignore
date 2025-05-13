@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Node.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.DS_Store
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Development/IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+.git/
+.github/

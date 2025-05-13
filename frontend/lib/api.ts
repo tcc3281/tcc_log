@@ -65,7 +65,12 @@ api.interceptors.request.use((config) => {
     if (token && !config.headers.Authorization) {
       // Make sure to include the 'Bearer ' prefix
       config.headers.Authorization = `Bearer ${token}`;
-      console.log(`Added token to request: Bearer ${token.substring(0, 15)}...`);
+      
+      // Log with partial token for debugging (hide most of the token)
+      const tokenPreview = token.length > 20 
+        ? `${token.substring(0, 10)}...${token.substring(token.length - 5)}`
+        : token.substring(0, 15) + '...';
+      console.log(`Added token to request: Bearer ${tokenPreview}`);
     }
   }
   
@@ -85,17 +90,39 @@ api.interceptors.response.use((response) => {
     
     // Handle authentication errors (401)
     if (error.response.status === 401) {
-      console.log('Authentication error - clearing credentials');
-      // Clear tokens and redirect to login if unauthorized
-      if (typeof window !== 'undefined') {
+      console.log('Authentication error - handling credentials');
+      
+      // Don't clear credentials or redirect while trying to validate the token in AuthContext
+      const isValidatingToken = error.config.url.endsWith('/users/me') && 
+                               error.config.method === 'get' && 
+                               localStorage.getItem('token');
+                               
+      // Don't redirect or clear on login/register pages or when validating token
+      const isAuthPage = typeof window !== 'undefined' && 
+                        (window.location.pathname.includes('/login') || 
+                         window.location.pathname.includes('/register'));
+                         
+      if (!isValidatingToken && !isAuthPage && typeof window !== 'undefined') {
+        // Calculate how long the user has been logged in
+        const loginTimestamp = localStorage.getItem('login_timestamp');
+        const currentTime = Date.now();
+        const loginDuration = loginTimestamp ? (currentTime - parseInt(loginTimestamp)) / 1000 / 60 : 0; // in minutes
+        
+        console.log(`Login duration: ${loginDuration.toFixed(2)} minutes`);
+        
+        // Clear auth data
         localStorage.removeItem('user');
         localStorage.removeItem('token');
+        localStorage.removeItem('login_timestamp');
         
-        // Chỉ điều hướng nếu không phải đang ở trang login
-        const currentPath = window.location.pathname;
-        if (!currentPath.includes('/login')) {
-          window.location.href = '/login';
-        }
+        // Redirect to login page with a message parameter
+        const redirectUrl = '/login?session_expired=true';
+        console.log(`Redirecting to ${redirectUrl}`);
+        
+        // Use a small delay to avoid interrupting the current request handling
+        setTimeout(() => {
+          window.location.href = redirectUrl;
+        }, 100);
       }
     } 
     // Handle validation errors (422)
