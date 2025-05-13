@@ -43,17 +43,23 @@ def get_topic(db: Session, topic_id: int, user_id: int):
     ).first()
 
 def update_topic(db: Session, topic_id: int, topic: schemas.TopicUpdate):
-    db_topic = get_topic(db, topic_id)
-    for key, value in topic.dict(exclude_unset=True).items():
-        setattr(db_topic, key, value)
-    db.commit()
-    db.refresh(db_topic)
+    # Lấy topic trực tiếp từ database mà không cần user_id
+    # vì chúng ta đã kiểm tra quyền sở hữu trong API endpoint
+    db_topic = db.query(models.Topic).filter(models.Topic.topic_id == topic_id).first()
+    if db_topic:
+        for key, value in topic.dict(exclude_unset=True).items():
+            setattr(db_topic, key, value)
+        db.commit()
+        db.refresh(db_topic)
     return db_topic
 
 def delete_topic(db: Session, topic_id: int):
-    db_topic = get_topic(db, topic_id)
-    db.delete(db_topic)
-    db.commit()
+    # Lấy topic trực tiếp từ database mà không cần user_id
+    # vì chúng ta đã kiểm tra quyền sở hữu trong API endpoint
+    db_topic = db.query(models.Topic).filter(models.Topic.topic_id == topic_id).first()
+    if db_topic:
+        db.delete(db_topic)
+        db.commit()
     return db_topic
 
 # Entry CRUD

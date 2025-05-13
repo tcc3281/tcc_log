@@ -22,6 +22,9 @@ services:
       - DATABASE_URL=postgresql+psycopg2://postgres:Mayyeutao0?@db:5432/postgres
       - SECRET_KEY=hZKxcKs2I92_s90ZVQNw4MF3BI1qKFFI-2PwhK8OlRM
       - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - RUN_MIGRATIONS=true
+      - SEED_DATA=true
+      - ADDITIONAL_CORS_ORIGINS=http://frontend:3000,http://localhost:3000
     ports:
       - "8000:8000"
     depends_on:
@@ -36,6 +39,9 @@ services:
     restart: always
     ports:
       - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_SERVER_API_URL=http://backend:8000
     depends_on:
       - backend
 

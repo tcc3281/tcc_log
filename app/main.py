@@ -16,6 +16,9 @@ from .api import users, topics, entries, files, links, tags, auth
 uploads_dir = "uploads"
 os.makedirs(uploads_dir, exist_ok=True)
 
+# Import seed data module
+from . import seed_data
+
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -63,10 +66,30 @@ app = FastAPI(
 # Add request logging middleware first
 app.add_middleware(RequestLoggingMiddleware)
 
+# Define allowed origins
+allowed_origins = [
+    "http://localhost:3000",      # Local development
+    "http://frontend:3000",       # Docker container to container
+    "http://127.0.0.1:3000",      # Alternative local address
+    "http://localhost:3001",      # In case of alternate port
+]
+
+# Check for additional allowed origins from environment variables
+if os.getenv('ADDITIONAL_CORS_ORIGINS'):
+    try:
+        # Split by comma and strip whitespace
+        additional_origins = [origin.strip() for origin in os.getenv('ADDITIONAL_CORS_ORIGINS').split(',')]
+        allowed_origins.extend(additional_origins)
+        logger.info(f"Added additional CORS origins: {additional_origins}")
+    except Exception as e:
+        logger.error(f"Error parsing ADDITIONAL_CORS_ORIGINS: {e}")
+
+logger.info(f"CORS allowed origins: {allowed_origins}")
+
 # Add CORS middleware with explicit method configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -141,6 +164,12 @@ async def startup_event():
     logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
     logger.info("Database initialization complete")
+    
+    # Seed database with initial data
+    try:
+        seed_data.seed_data()
+    except Exception as e:
+        logger.error(f"Error seeding database: {e}")
     
     # Log all registered routes on startup in a cleaner format
     logger.info("Registered routes:")
