@@ -456,13 +456,35 @@ const NewEntryPage = () => {
                   <p className="text-gray-500 dark:text-gray-400 italic">No content to preview</p>
                 )}
               </div>
-            ) : (
-              <textarea
+            ) : (              <textarea
                 id="content"
                 ref={textareaRef}
                 placeholder="Write your entry here... (Supports Markdown)"
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
+                onKeyDown={(e) => {
+                  // Bắt sự kiện Tab
+                  if (e.key === 'Tab') {
+                    e.preventDefault(); // Ngăn chặn hành vi mặc định (nhảy đến trường tiếp theo)
+                    
+                    const textarea = e.currentTarget;
+                    const start = textarea.selectionStart;
+                    const end = textarea.selectionEnd;
+                    
+                    // Chèn ký tự tab vào vị trí con trỏ
+                    const newContent = 
+                      content.substring(0, start) + 
+                      '\t' + 
+                      content.substring(end);
+                    
+                    setContent(newContent);
+                    
+                    // Đặt lại vị trí con trỏ sau khi chèn tab
+                    setTimeout(() => {
+                      textarea.selectionStart = textarea.selectionEnd = start + 1;
+                    }, 0);
+                  }
+                }}
                 className="form-input min-h-[300px] rounded-t-none"
                 rows={12}
               />

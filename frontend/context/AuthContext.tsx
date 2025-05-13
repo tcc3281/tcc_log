@@ -26,11 +26,17 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-export const AuthProvider = ({ children }: AuthProviderProps) => {
-  const [user, setUser] = useState<User | null>(null);
+export const AuthProvider = ({ children }: AuthProviderProps) => {  const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';  // Load user from localStorage on initial render
+  
+  // Determine correct API URL based on environment
+  const isServer = typeof window === 'undefined';
+  const serverApiUrl = process.env.NEXT_SERVER_API_URL || 'http://backend:8000';
+  const clientApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  
+  // Select the appropriate URL based on whether we're on client or server
+  const apiUrl = isServer ? serverApiUrl : clientApiUrl;
   useEffect(() => {
     const loadUserFromStorage = async () => {
       try {

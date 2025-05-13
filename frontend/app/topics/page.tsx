@@ -258,11 +258,30 @@ const TopicsPage = () => {
                   />
                 </div>
                 <div className="mb-6">
-                  <label htmlFor="description" className="form-label">Description</label>
-                  <textarea
+                  <label htmlFor="description" className="form-label">Description</label>                  <textarea
                     id="description"
                     value={updatedDescription}
                     onChange={(e) => setUpdatedDescription(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Tab') {
+                        e.preventDefault();
+                        
+                        const textarea = e.currentTarget;
+                        const start = textarea.selectionStart;
+                        const end = textarea.selectionEnd;
+                        
+                        const newContent = 
+                          updatedDescription.substring(0, start) + 
+                          '\t' + 
+                          updatedDescription.substring(end);
+                        
+                        setUpdatedDescription(newContent);
+                        
+                        setTimeout(() => {
+                          textarea.selectionStart = textarea.selectionEnd = start + 1;
+                        }, 0);
+                      }
+                    }}
                     className="form-input"
                     rows={4}
                   />

@@ -46,11 +46,30 @@ const NewTopicPage = () => {
           onChange={(e) => setTopicName(e.target.value)}
           className="border p-2"
           required
-        />
-        <textarea
+        />        <textarea
           placeholder="Description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Tab') {
+              e.preventDefault();
+              
+              const textarea = e.currentTarget;
+              const start = textarea.selectionStart;
+              const end = textarea.selectionEnd;
+              
+              const newContent = 
+                description.substring(0, start) + 
+                '\t' + 
+                description.substring(end);
+              
+              setDescription(newContent);
+              
+              setTimeout(() => {
+                textarea.selectionStart = textarea.selectionEnd = start + 1;
+              }, 0);
+            }
+          }}
           className="border p-2"
         />
         <button type="submit" className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600">

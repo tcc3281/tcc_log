@@ -1,8 +1,14 @@
 import axios from 'axios';
 
-// Log the actual API URL being used for debugging
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-console.log('API URL:', apiUrl);
+// Determine correct API URL based on environment
+// Use NEXT_SERVER_API_URL for server-side requests and NEXT_PUBLIC_API_URL for client-side requests
+const isServer = typeof window === 'undefined';
+const serverApiUrl = process.env.NEXT_SERVER_API_URL || 'http://backend:8000';
+const clientApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+// Select the appropriate URL based on whether we're on client or server
+const apiUrl = isServer ? serverApiUrl : clientApiUrl;
+console.log(`API URL (${isServer ? 'server-side' : 'client-side'}):`, apiUrl);
 
 // Create axios instance with proper configuration
 const api = axios.create({
@@ -37,9 +43,9 @@ export const uploadFile = async (file: File, entryId: number): Promise<string> =
     
     // Return the Markdown-ready URL format based on file type
     const isImage = file.type.startsWith('image/');
-    
-    // Sử dụng đúng đường dẫn của file
-    const fileUrl = `${apiUrl}/uploads/${fileData.file_path}`;
+      // Always use the client API URL for file URLs since they'll be loaded by the browser
+    const clientUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    const fileUrl = `${clientUrl}/uploads/${fileData.file_path}`;
     
     if (isImage) {
       return `![${file.name}](${fileUrl})`;

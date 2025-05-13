@@ -48,13 +48,13 @@ export default function Header() {
             </nav>
           </div>        ) : (          <div className="flex gap-3">            <Link 
               href="/login" 
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-md text-sm transition-colors shadow-md"
+              className="bg-blue-600 hover:bg-blue-700 !text-white font-semibold px-4 py-2 rounded-md text-sm transition-colors shadow-md"
             >
               Login
             </Link>
             <Link 
               href="/register"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-md text-sm transition-colors shadow-md"
+              className="bg-emerald-600 hover:bg-emerald-700 !text-white font-semibold px-4 py-2 rounded-md text-sm transition-colors shadow-md"
             >
               Register
             </Link>
