@@ -10,6 +10,7 @@ import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import emojiUtils from '../lib/emoji-utils';
 import styles from './MarkdownStyles.module.css';
+import EmojiPicker from './EmojiPicker';
 
 // Mermaid initialization with more robust configuration
 // We'll initialize mermaid in the component to properly handle dark/light mode
@@ -60,9 +61,10 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   height = "300px",
   placeholder = "Write your markdown here...",
   onFileUpload
-}) => {
-  const [isPreview, setIsPreview] = useState(false);
+}) => {  const [isPreview, setIsPreview] = useState(false);
   const [splitView, setSplitView] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [emojiPickerAnchor, setEmojiPickerAnchor] = useState<{ top: number, left: number } | null>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const [selectedText, setSelectedText] = useState({ start: 0, end: 0, text: "" });
@@ -337,6 +339,11 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     }
   };
 
+  const handleEmojiSelect = (emoji: string) => {
+    insertText(emoji);
+    setShowEmojiPicker(false);
+  };
+  
   // Toolbar action handlers
   const handleBold = () => formatText('**', '**');
   const handleItalic = () => formatText('*', '*');
@@ -363,24 +370,22 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   };
   
   const handleInlineMath = () => formatText('$', '$');
-  
-  const handleEmoji = () => {
-    const emojiMap = {
-      'smile': '😊',
-      'laugh': '😂',
-      'heart': '❤️',
-      'check': '✅',
-      'x': '❌',
-      'idea': '💡',
-      'warning': '⚠️',
-      'note': '📝'
-    };
+    const handleEmoji = (e?: React.MouseEvent<HTMLButtonElement>) => {
+    if (!e) return;
     
-    // Insert dropdown or picker here in a real implementation
-    const emoji = prompt('Enter emoji name (e.g., smile, laugh, heart, check, x, idea, warning, note):');
-    if (emoji) {
-      insertText(emojiMap[emoji as keyof typeof emojiMap] || `:${emoji}:`);
+    // Toggle emoji picker
+    if (showEmojiPicker) {
+      setShowEmojiPicker(false);
+      return;
     }
+    
+    // Position the emoji picker near the button
+    const buttonRect = e.currentTarget.getBoundingClientRect();
+    setEmojiPickerAnchor({
+      top: buttonRect.bottom + window.scrollY + 5,
+      left: buttonRect.left + window.scrollX
+    });
+    setShowEmojiPicker(true);
   };
 
   // Helper functions for text formatting
@@ -553,7 +558,7 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     { icon: "📊", label: "Mermaid Diagram", action: handleMermaidDiagram },
     { icon: "∑", label: "Math Block", action: handleMathBlock },
     { icon: "𝑥", label: "Inline Math", action: handleInlineMath },
-    { icon: "😊", label: "Emoji", action: handleEmoji },
+    { icon: "😊", label: "Emoji Picker", action: handleEmoji },
   ];  // Method to safely change view mode without triggering form submission
   const changeViewMode = (mode: 'edit' | 'preview' | 'split', e?: React.MouseEvent<HTMLButtonElement>) => {
     // Prevent any form submission
@@ -605,9 +610,23 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       className: splitView ? "bg-blue-500 dark:bg-blue-700 text-white font-medium" : "bg-white dark:bg-gray-700"
     }
   ];
-
   return (
-    <div className="border border-gray-300 dark:border-gray-600 rounded-md overflow-hidden">      {/* View Mode Selector */}      <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-600 px-3 py-2">
+    <div className="border border-gray-300 dark:border-gray-600 rounded-md overflow-hidden relative">
+      {/* Emoji Picker */}      {showEmojiPicker && emojiPickerAnchor && (
+        <div style={{ 
+          position: 'fixed', 
+          top: Math.min(emojiPickerAnchor.top, window.innerHeight - 350), 
+          left: Math.min(emojiPickerAnchor.left, window.innerWidth - 280), 
+          zIndex: 9999 
+        }}>
+          <EmojiPicker 
+            onSelect={handleEmojiSelect} 
+            onClose={() => setShowEmojiPicker(false)} 
+          />
+        </div>
+      )}
+      
+      {/* View Mode Selector */}      <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800 border-b border-gray-300 dark:border-gray-600 px-3 py-2">
         <div className="text-sm font-medium text-gray-500 dark:text-gray-400">Editor Mode:</div>
         <div className="inline-flex rounded-md shadow-sm" role="group">
           {viewModeButtons.map((btn, idx) => (            <button
