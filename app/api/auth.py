@@ -133,3 +133,48 @@ def get_current_active_user(
 @router.get("/me", response_model=schemas.User)
 async def read_users_me(current_user: models.User = Depends(get_current_active_user)):
     return current_user
+
+@router.patch("/me", response_model=schemas.User)
+async def update_users_me(
+    user_update: schemas.UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """Update current user's profile information"""
+    # Update username and email
+    if user_update.username:
+        # Check if username is already taken by another user
+        existing_user = crud.get_user_by_username(db, user_update.username)
+        if existing_user and existing_user.user_id != current_user.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already registered"
+            )
+        current_user.username = user_update.username
+        
+    if user_update.email:
+        # Check if email is already taken by another user
+        existing_email = crud.get_user_by_email(db, user_update.email)
+        if existing_email and existing_email.user_id != current_user.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        current_user.email = user_update.email
+    
+    # Update password if requested
+    if user_update.new_password and user_update.current_password:
+        # Verify current password
+        if not verify_password(user_update.current_password, current_user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect current password"
+            )
+        # Hash and set new password
+        current_user.password_hash = crud.get_password_hash(user_update.new_password)
+    
+    # Commit changes to database
+    db.commit()
+    db.refresh(current_user)
+    
+    return current_user

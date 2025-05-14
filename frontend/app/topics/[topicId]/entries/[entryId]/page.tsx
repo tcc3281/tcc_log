@@ -1,10 +1,24 @@
 'use client';
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '../../../../../context/AuthContext';
 import api, { uploadFile } from '../../../../../lib/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import MarkdownEditor from '../../../../../components/MarkdownEditor';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import mermaid from 'mermaid';
+import 'katex/dist/katex.min.css';
+
+// Initialize mermaid
+if (typeof window !== 'undefined') {
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    securityLevel: 'loose',
+  });
+}
 
 // Define Entry interface
 interface Entry {
@@ -46,10 +60,15 @@ const EntryDetailPage = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
-
   useEffect(() => {
     const fetchData = async () => {
-      if (!user || !topicId || !entryId) return;
+      if (!user || !topicId || !entryId) {
+        if (!user) {
+          console.error('User not authenticated, redirecting to login');
+          router.push('/login');
+        }
+        return;
+      }
       try {
         setLoading(true);
         console.log(`Fetching entry with ID: ${entryId} for topic: ${topicId}`);
@@ -125,6 +144,20 @@ const EntryDetailPage = () => {
     fetchData();
   }, [user, topicId, entryId]);
 
+  // Effect to render mermaid diagrams when viewing an entry
+  useEffect(() => {
+    if (!isEditing && entry?.content) {
+      // Use setTimeout to ensure the DOM is fully rendered
+      setTimeout(() => {
+        try {
+          mermaid.init(undefined, document.querySelectorAll('.mermaid'));
+        } catch (error) {
+          console.error('Error rendering mermaid diagrams:', error);
+        }
+      }, 100);
+    }
+  }, [isEditing, entry?.content]);
+
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !topicId || !entryId) return;
@@ -171,9 +204,7 @@ const EntryDetailPage = () => {
       setError('Failed to delete entry. Please try again.');
       setIsSubmitting(false);
     }
-  };
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  };  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0 || !entryId) return;
     
@@ -181,23 +212,15 @@ const EntryDetailPage = () => {
       setUploadingFile(true);
       setError(null);
       
-      // Upload từng file và thêm vào nội dung
+      // Upload each file and add to content
       let newContent = content;
       
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const markdownLink = await uploadFile(file, Number(entryId));
         
-        // Thêm file vào cuối nội dung hoặc tại vị trí con trỏ
-        if (textareaRef.current) {
-          const cursorPos = textareaRef.current.selectionStart;
-          newContent = 
-            newContent.substring(0, cursorPos) + 
-            "\n" + markdownLink + "\n" + 
-            newContent.substring(cursorPos);
-        } else {
-          newContent = newContent + "\n" + markdownLink + "\n";
-        }
+        // Add markdown link to the content (at the end)
+        newContent = newContent + "\n" + markdownLink + "\n";
       }
       
       setContent(newContent);
@@ -213,50 +236,9 @@ const EntryDetailPage = () => {
       setUploadingFile(false);
     }
   };
-
-  // Hàm hỗ trợ chèn định dạng Markdown vào vị trí con trỏ
-  const insertMarkdown = (before: string, after: string = '') => {
-    if (!textareaRef.current) return;
-    
-    const textarea = textareaRef.current;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = content.substring(start, end);
-    
-    const newContent = 
-      content.substring(0, start) + 
-      before + 
-      selectedText + 
-      after + 
-      content.substring(end);
-    
-    setContent(newContent);
-    
-    // Đặt lại con trỏ sau khi chèn
-    setTimeout(() => {
-      textarea.focus();
-      textarea.setSelectionRange(
-        start + before.length,
-        end + before.length
-      );
-    }, 0);
-  };
-
+  // Simple wrapper for the file upload button
   const markdownButtons = [
-    { label: 'B', tooltip: 'Bold', onClick: () => insertMarkdown('**', '**') },
-    { label: 'I', tooltip: 'Italic', onClick: () => insertMarkdown('*', '*') },
-    { label: 'H2', tooltip: 'Heading', onClick: () => insertMarkdown('## ') },
-    { label: 'H3', tooltip: 'Subheading', onClick: () => insertMarkdown('### ') },
-    { label: '―', tooltip: 'Horizontal Rule', onClick: () => insertMarkdown('\n---\n') },
-    { label: '✓', tooltip: 'Checklist', onClick: () => insertMarkdown('- [ ] ') },
-    { label: '•', tooltip: 'Bullet List', onClick: () => insertMarkdown('- ') },
-    { label: '1.', tooltip: 'Numbered List', onClick: () => insertMarkdown('1. ') },
-    { label: '🔗', tooltip: 'Link', onClick: () => insertMarkdown('[', '](url)') },
-    { label: '💬', tooltip: 'Blockquote', onClick: () => insertMarkdown('> ') },
-    { label: '<>', tooltip: 'Code', onClick: () => insertMarkdown('`', '`') },
-    { label: '```', tooltip: 'Code Block', onClick: () => insertMarkdown('```\n', '\n```') },
-    { 
-      label: '📎', 
+    { label: '📎', 
       tooltip: 'Upload File/Image', 
       onClick: () => fileInputRef.current?.click() 
     },
@@ -363,92 +345,16 @@ const EntryDetailPage = () => {
           />
         </div>
         
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label htmlFor="content" className="form-label">Content</label>
-            <div className="flex items-center space-x-2">
-              <button
-                type="button"
-                className={`px-3 py-1 text-sm rounded ${!isPreview ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}
-                onClick={() => setIsPreview(false)}
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                className={`px-3 py-1 text-sm rounded ${isPreview ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}
-                onClick={() => setIsPreview(true)}
-              >
-                Preview
-              </button>
-            </div>
-          </div>
-          
-          {/* Markdown Toolbar */}
-          {!isPreview && (
-            <div className="flex flex-wrap gap-1 p-2 bg-gray-100 dark:bg-gray-800 rounded-t border border-gray-300 dark:border-gray-600 border-b-0">
-              {markdownButtons.map((btn, index) => (
-                <button
-                  key={index}
-                  type="button"
-                  onClick={btn.onClick}
-                  title={btn.tooltip}
-                  className="p-1.5 min-w-8 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-                  disabled={uploadingFile && btn.tooltip === 'Upload File/Image'}
-                >
-                  {uploadingFile && btn.tooltip === 'Upload File/Image' ? (
-                    <span className="animate-pulse">⏳</span>
-                  ) : (
-                    btn.label
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-          
-          {isPreview ? (
-            <div className="form-input min-h-[300px] overflow-auto prose dark:prose-invert">
-              {content ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {content}
-                </ReactMarkdown>
-              ) : (
-                <p className="text-gray-500 dark:text-gray-400 italic">No content to preview</p>
-              )}
-            </div>
-          ) : (            <textarea
-              id="content"
-              ref={textareaRef}
-              placeholder="Write your entry here... (Supports Markdown)"
+        <div>          <label htmlFor="content" className="form-label">Content</label>
+              <div style={{minHeight: "70vh"}} className="flex flex-col">
+            <MarkdownEditor 
               value={content}
-              onChange={(e) => setContent(e.target.value)}
-              onKeyDown={(e) => {
-                // Bắt sự kiện Tab
-                if (e.key === 'Tab') {
-                  e.preventDefault(); // Ngăn chặn hành vi mặc định (nhảy đến trường tiếp theo)
-                  
-                  const textarea = e.currentTarget;
-                  const start = textarea.selectionStart;
-                  const end = textarea.selectionEnd;
-                  
-                  // Chèn ký tự tab vào vị trí con trỏ
-                  const newContent = 
-                    content.substring(0, start) + 
-                    '\t' + 
-                    content.substring(end);
-                  
-                  setContent(newContent);
-                  
-                  // Đặt lại vị trí con trỏ sau khi chèn tab
-                  setTimeout(() => {
-                    textarea.selectionStart = textarea.selectionEnd = start + 1;
-                  }, 0);
-                }
-              }}
-              className="form-input min-h-[300px] rounded-t-none"
-              rows={12}
+              onChange={(value) => setContent(value)}
+              height="100%"
+              placeholder="Write your entry here... (Supports Markdown, MathJax, Mermaid diagrams, and more)"
+              onFileUpload={() => fileInputRef.current?.click()}
             />
-          )}
+          </div>
           
           <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1">
             <p className="font-medium">Markdown Cheat Sheet:</p>
@@ -607,12 +513,43 @@ const EntryDetailPage = () => {
           </button>
         </div>
       </div>
-      
-      <div className="prose dark:prose-invert max-w-none mb-8">
-        {entry?.content ? (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {entry.content}
-          </ReactMarkdown>
+        <div className="prose dark:prose-invert max-w-none mb-8">
+        {entry?.content ? (          <div>
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm]} 
+              components={{
+                code: ({className, children, ...props}) => {
+                  const match = /language-(\w+)/.exec(className || '')
+                  const language = match ? match[1] : ''
+                  const isDarkMode = typeof window !== 'undefined' && 
+                    window.matchMedia && 
+                    window.matchMedia('(prefers-color-scheme: dark)').matches;
+                  
+                  // Handle mermaid diagrams
+                  if (language === 'mermaid') {
+                    return <div className="mermaid">{String(children).replace(/\n$/, '')}</div>
+                  }
+                  
+                  // Regular code blocks with syntax highlighting
+                  return match ? (
+                    <SyntaxHighlighter
+                      style={isDarkMode ? vscDarkPlus : vs}
+                      language={language}
+                      PreTag="div"
+                      {...props}
+                    >
+                      {String(children).replace(/\n$/, '')}
+                    </SyntaxHighlighter>
+                  ) : (
+                    <code className={className} {...props}>
+                      {children}
+                    </code>
+                  )
+                }              }}
+            >
+              {entry.content}
+            </ReactMarkdown>
+          </div>
         ) : (
           <p className="text-gray-500 dark:text-gray-400 italic">No content provided.</p>
         )}
