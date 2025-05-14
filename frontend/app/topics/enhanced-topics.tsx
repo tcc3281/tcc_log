@@ -11,7 +11,7 @@ interface Topic {
   description?: string;
 }
 
-const TopicsPage = () => {
+const EnhancedTopicsPage = () => {
   const { user } = useAuth();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,7 +26,7 @@ const TopicsPage = () => {
 
   useEffect(() => {
     if (!user) return;
-
+    
     const fetchTopics = async () => {
       try {
         const res = await api.get('/topics');
@@ -38,7 +38,7 @@ const TopicsPage = () => {
         setLoading(false);
       }
     };
-
+    
     fetchTopics();
   }, [user]);
 
@@ -71,13 +71,14 @@ const TopicsPage = () => {
     try {
       const response = await api.put(`/topics/${editingTopic.topic_id}`, {
         topic_name: updatedTopicName,
-        description: updatedDescription,
+        description: updatedDescription
       });
 
-      setTopics((prevTopics) =>
-        prevTopics.map((t) =>
-          t.topic_id === editingTopic.topic_id
-            ? { ...t, topic_name: updatedTopicName, description: updatedDescription }
+      // Update the topics list
+      setTopics(prevTopics => 
+        prevTopics.map(t => 
+          t.topic_id === editingTopic.topic_id 
+            ? { ...t, topic_name: updatedTopicName, description: updatedDescription } 
             : t
         )
       );
@@ -94,9 +95,10 @@ const TopicsPage = () => {
 
     try {
       await api.delete(`/topics/${topicToDelete}`);
-
-      setTopics((prevTopics) => prevTopics.filter((t) => t.topic_id !== topicToDelete));
-
+      
+      // Update the topics list
+      setTopics(prevTopics => prevTopics.filter(t => t.topic_id !== topicToDelete));
+      
       closeDeleteModal();
     } catch (err) {
       console.error('Error deleting topic:', err);
@@ -170,8 +172,8 @@ const TopicsPage = () => {
             <h2 className="text-xl font-bold text-red-600 dark:text-red-400">Error Loading Topics</h2>
           </div>
           <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
+          <button 
+            onClick={() => window.location.reload()} 
             className="mt-2 btn btn-primary flex items-center gap-2"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -191,8 +193,8 @@ const TopicsPage = () => {
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Topics</h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1">Organize your journal entries by topics</p>
         </div>
-        <Link
-          href="/topics/new"
+        <Link 
+          href="/topics/new" 
           className="btn btn-primary flex items-center justify-center gap-2 sm:justify-start px-6 py-2.5 shadow-md hover:shadow-lg transition-all"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -201,7 +203,7 @@ const TopicsPage = () => {
           Create New Topic
         </Link>
       </div>
-
+      
       {topics.length === 0 ? (
         <div className="card p-10 text-center bg-white dark:bg-gray-800 shadow-md rounded-xl border border-gray-200 dark:border-gray-700">
           <div className="flex flex-col items-center">
@@ -214,8 +216,8 @@ const TopicsPage = () => {
             <p className="text-gray-500 dark:text-gray-400 text-lg mb-8 max-w-md">
               Topics help you organize your journal entries. Create your first topic to get started.
             </p>
-            <Link
-              href="/topics/new"
+            <Link 
+              href="/topics/new" 
               className="btn btn-primary px-8 py-3 text-lg shadow-md hover:shadow-lg transition-all"
             >
               Create Your First Topic
@@ -223,11 +225,12 @@ const TopicsPage = () => {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">          {topics.map((topic) => (
-            <div key={topic.topic_id} className="card topic-card hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {topics.map((topic) => (
+            <div key={topic.topic_id} className="card hover:shadow-lg transition-all duration-300 bg-white dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700">
               <div className="p-6">
                 <div className="flex items-center mb-4">
-                  <div className="p-2 rounded-full bg-blue-100 dark:bg-blue-900/30 mr-3 topic-icon-container">
+                  <div className="p-2 rounded-full bg-blue-100 dark:bg-blue-900/30 mr-3">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
@@ -239,10 +242,10 @@ const TopicsPage = () => {
                     {topic.description || 'No description provided.'}
                   </p>
                 </div>
-
+                
                 <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-                  <Link
-                    href={`/topics/${topic.topic_id}/entries`}
+                  <Link 
+                    href={`/topics/${topic.topic_id}/entries`} 
                     className="flex items-center text-blue-600 dark:text-blue-400 hover:underline font-medium"
                   >
                     View Entries
@@ -250,7 +253,7 @@ const TopicsPage = () => {
                       <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
                     </svg>
                   </Link>
-
+                  
                   <div className="flex space-x-2">
                     <button
                       onClick={() => openEditModal(topic)}
@@ -277,14 +280,14 @@ const TopicsPage = () => {
           ))}
         </div>
       )}
-
+      
       {/* Edit Topic Modal */}
       {isEditing && editingTopic && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md border border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
               <h3 className="text-xl font-bold text-gray-900 dark:text-white">Edit Topic</h3>
-              <button
+              <button 
                 onClick={closeEditModal}
                 className="p-1 rounded-full text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               >
@@ -311,40 +314,20 @@ const TopicsPage = () => {
                   id="description"
                   value={updatedDescription}
                   onChange={(e) => setUpdatedDescription(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Tab') {
-                      e.preventDefault();
-
-                      const textarea = e.currentTarget;
-                      const start = textarea.selectionStart;
-                      const end = textarea.selectionEnd;
-
-                      const newContent =
-                        updatedDescription.substring(0, start) +
-                        '\t' +
-                        updatedDescription.substring(end);
-
-                      setUpdatedDescription(newContent);
-
-                      setTimeout(() => {
-                        textarea.selectionStart = textarea.selectionEnd = start + 1;
-                      }, 0);
-                    }
-                  }}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                   rows={4}
                 />
               </div>
               <div className="flex justify-end gap-3">
-                <button
-                  type="button"
+                <button 
+                  type="button" 
                   onClick={closeEditModal}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
+                <button 
+                  type="submit" 
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
                 >
                   Save Changes
@@ -354,7 +337,7 @@ const TopicsPage = () => {
           </div>
         </div>
       )}
-
+      
       {/* Delete Confirmation Modal */}
       {isDeleting && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -372,13 +355,13 @@ const TopicsPage = () => {
                 Are you sure you want to delete this topic? This action will permanently remove the topic and all its entries. This cannot be undone.
               </p>
               <div className="flex justify-end gap-3">
-                <button
+                <button 
                   onClick={closeDeleteModal}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                 >
                   Cancel
                 </button>
-                <button
+                <button 
                   onClick={handleDeleteTopic}
                   className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors"
                 >
@@ -393,4 +376,4 @@ const TopicsPage = () => {
   );
 };
 
-export default TopicsPage;
+export default EnhancedTopicsPage;

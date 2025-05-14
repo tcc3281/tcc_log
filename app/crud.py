@@ -70,6 +70,12 @@ def delete_topic(db: Session, topic_id: int):
 def get_entries(db: Session, user_id: int, skip: int = 0, limit: int = 100):
     return db.query(models.Entry).filter(models.Entry.user_id == user_id).offset(skip).limit(limit).all()
 
+def get_entries_by_topic(db: Session, topic_id: int, user_id: int, skip: int = 0, limit: int = 100):
+    return db.query(models.Entry).filter(
+        models.Entry.topic_id == topic_id,
+        models.Entry.user_id == user_id
+    ).order_by(models.Entry.entry_date.desc()).offset(skip).limit(limit).all()
+
 def create_entry(db: Session, entry: schemas.EntryCreate, user_id: int):
     db_entry = models.Entry(
         user_id=user_id,
