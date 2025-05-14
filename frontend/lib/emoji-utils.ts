@@ -91,8 +91,43 @@ export function isEmojiToolkitAvailable(): boolean {
   );
 }
 
+/**
+ * Get shortname for emoji character
+ */
+export function getShortname(emoji: string): string {
+  if (!emoji) return '';
+  
+  try {
+    // Try different API versions
+    if (typeof emojiToolkit.toShort === 'function') {
+      return emojiToolkit.toShort(emoji).replace(/:/g, '');
+    } else if (
+      emojiToolkit.joypixels && 
+      typeof emojiToolkit.joypixels.toShort === 'function'
+    ) {
+      return emojiToolkit.joypixels.toShort(emoji).replace(/:/g, '');
+    }
+    // Basic reverse lookup for common emojis
+    const emojiReverseMap: Record<string, string> = {
+      '😊': 'smile',
+      '😂': 'joy',
+      '❤️': 'heart',
+      '✅': 'check',
+      '❌': 'x',
+      '💡': 'bulb',
+      '⚠️': 'warning',
+      '📝': 'memo'
+    };
+    return emojiReverseMap[emoji] || 'emoji';
+  } catch (error) {
+    console.warn('Error getting emoji shortname:', error);
+    return 'emoji';
+  }
+}
+
 export default {
   shortnameToUnicode,
   unicodeToShortname,
-  isEmojiToolkitAvailable
+  isEmojiToolkitAvailable,
+  getShortname
 };
