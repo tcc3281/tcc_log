@@ -5,7 +5,7 @@ import api from '../../../lib/api';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
-const NewTopicPage = () => {
+const EnhancedNewTopicPage = () => {
   const { user } = useAuth();
   const [topicName, setTopicName] = useState('');
   const [description, setDescription] = useState('');
@@ -159,4 +159,4 @@ const NewTopicPage = () => {
   );
 };
 
-export default NewTopicPage;
+export default EnhancedNewTopicPage;

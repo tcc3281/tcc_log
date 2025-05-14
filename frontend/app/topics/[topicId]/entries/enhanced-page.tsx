@@ -4,8 +4,6 @@ import { useAuth } from '../../../../context/AuthContext';
 import api from '../../../../lib/api';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import '../../../styles/topic-styles.css';
-import '../../../styles/topic-styles.css';
 
 interface Entry {
   entry_id: number;
@@ -19,7 +17,6 @@ interface Entry {
   mood?: string;
 }
 
-// Define unique filter options
 interface FilterOptions {
   locations: string[];
   weathers: string[];
@@ -32,8 +29,7 @@ interface Topic {
   description?: string;
 }
 
-/* This file has been updated with our enhanced implementation */
-const EntriesPage = () => {
+const EnhancedEntriesPage = () => {
   const { user } = useAuth();
   const params = useParams();
   const router = useRouter();
@@ -43,8 +39,7 @@ const EntriesPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [topic, setTopic] = useState<Topic | null>(null);
-  
-  // Filter states
+    // Filter states  
   const [filterTitle, setFilterTitle] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
@@ -71,17 +66,13 @@ const EntriesPage = () => {
         
         // Fetch all entries for this topic
         const entriesResponse = await api.get(`/topics/${topicId}/entries`);
-        // Log the API request for debugging
-        console.log(`Fetching entries from: /topics/${topicId}/entries`);
-        
         const entriesData = entriesResponse.data;
         setEntries(entriesData);
-        setFilteredEntries(entriesData);
-
-        // Extract unique filter options
-        const locations = [...new Set(entriesData.map((entry: Entry) => entry.location).filter(Boolean))].map(String);
-        const weathers = [...new Set(entriesData.map((entry: Entry) => entry.weather).filter(Boolean))].map(String);
-        const moods = [...new Set(entriesData.map((entry: Entry) => entry.mood).filter(Boolean))].map(String);
+        setFilteredEntries(entriesData);        // Extract unique filter options with proper type checking
+        // Cast the Set results to string[] to satisfy TypeScript
+        const locations = [...new Set(entriesData.map((entry: Entry) => entry.location as string).filter((loc: unknown): loc is string => typeof loc === 'string'))] as string[];
+        const weathers = [...new Set(entriesData.map((entry: Entry) => entry.weather as string).filter((w: unknown): w is string => typeof w === 'string'))] as string[];
+        const moods = [...new Set(entriesData.map((entry: Entry) => entry.mood as string).filter((m: unknown): m is string => typeof m === 'string'))] as string[];
         
         setFilterOptions({
           locations,
@@ -290,7 +281,8 @@ const EntriesPage = () => {
           </div>
           <div className="flex gap-2">
             <button 
-              onClick={() => setShowFilters(!showFilters)}              className={`flex items-center gap-2 px-4 py-2 rounded-lg border filter-btn-active ${
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${
                 showFilters 
                   ? 'border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20' 
                   : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
@@ -309,8 +301,7 @@ const EntriesPage = () => {
                   (filterVisibility ? 1 : 0)}
                 </span>
               )}
-            </button>
-            {(filterTitle || filterStartDate || filterEndDate || filterLocation || filterWeather || filterMood || filterVisibility) && (
+            </button>            {(filterTitle || filterStartDate || filterEndDate || filterLocation || filterWeather || filterMood || filterVisibility) && (
               <button 
                 onClick={resetFilters}
                 className="flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -348,7 +339,7 @@ const EntriesPage = () => {
                   />
                 </div>
               </div>
-              
+
               <div>
                 <label htmlFor="visibility" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Visibility
@@ -464,62 +455,66 @@ const EntriesPage = () => {
           <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
             Showing {filteredEntries.length} {filteredEntries.length === 1 ? 'entry' : 'entries'}
             {filteredEntries.length !== entries.length && ` (filtered from ${entries.length})`}
-          </div>          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          </div>
+          
+          <div className="space-y-6">
             {filteredEntries.map((entry) => (
               <div 
                 key={entry.entry_id} 
-                className="card entry-item topic-card entry-card bg-white dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-300"
-              ><div className="p-6">
+                className="card bg-white dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow"
+              >
+                <div className="p-6">
                   <Link href={`/topics/${topicId}/entries/${entry.entry_id}`} className="block">
-                    <div className="flex items-center mb-4">
-                      <div className="p-2 rounded-full bg-blue-100 dark:bg-blue-900/30 mr-3 topic-icon-container">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors mb-2">
+                      {entry.title}
+                    </h2>
+                    <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400 mb-4">
+                      <span className="flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
-                      </div>
-                      <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                        {entry.title}
-                      </h2>
-                    </div>                    <div className="h-20 overflow-hidden mb-4">
-                      <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 dark:text-gray-400">                        <span className="flex items-center entry-metadata-tag">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          {formatDate(entry.entry_date)}
-                        </span>{entry.location && (
-                        <span className="flex items-center entry-metadata-tag">
+                        {formatDate(entry.entry_date)}
+                      </span>
+                      {entry.location && (
+                        <span className="flex items-center">
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                           </svg>
                           {entry.location}
                         </span>
-                      )}                      {entry.weather && (
-                        <span className="flex items-center entry-metadata-tag">
+                      )}
+                      {entry.weather && (
+                        <span className="flex items-center">
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
                           </svg>
                           {entry.weather}
                         </span>
-                      )}                      {entry.mood && (
-                        <span className="flex items-center entry-metadata-tag">
+                      )}
+                      {entry.mood && (
+                        <span className="flex items-center">
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
                           {entry.mood}
                         </span>
-                      )}                      <span className="flex items-center ml-auto entry-metadata-tag">
+                      )}              <span className="flex items-center ml-auto">
                         <span className={`w-2 h-2 rounded-full mr-1 ${entry.is_public ? 'bg-green-500' : 'bg-gray-400'}`}></span>
-                        {entry.is_public ? 'Public' : 'Private'}
-                      </span>
-                      </div>
+                        {entry.is_public ? 'Public' : 'Private'}                      </span>
                     </div>
-                  </Link>                  <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                    {entry.content && (
+                      <p className="text-gray-600 dark:text-gray-400 line-clamp-2">
+                        {entry.content.replace(/<[^>]*>/g, '')}
+                      </p>
+                    )}
+                  </Link>
+                  <div className="flex justify-end mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
                     <Link 
                       href={`/topics/${topicId}/entries/${entry.entry_id}`} 
-                      className="flex items-center text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                      className="flex items-center text-blue-600 dark:text-blue-400 hover:underline"
                     >
-                      Read Entry
+                      Read More
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
                       </svg>
@@ -535,4 +530,4 @@ const EntriesPage = () => {
   );
 };
 
-export default EntriesPage;
+export default EnhancedEntriesPage;

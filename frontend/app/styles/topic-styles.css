@@ -1,0 +1,112 @@
+/* Topic-specific styles */
+
+.topic-card {
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.topic-card:hover {
+  transform: translateY(-2px);
+}
+
+.topic-icon-container {
+  transition: background-color 0.2s, transform 0.2s;
+}
+
+.topic-card:hover .topic-icon-container {
+  transform: scale(1.05);
+}
+
+/* Entry card styles - matching topic cards */
+.entry-card {
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.entry-card:hover {
+  transform: translateY(-2px);
+}
+
+.entry-metadata-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  background-color: rgba(209, 213, 219, 0.2);
+  margin-right: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.entry-metadata-tag svg {
+  margin-right: 0.25rem;
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .entry-metadata-tag {
+    background-color: rgba(55, 65, 81, 0.4);
+  }
+}
+
+/* Filter button animation */
+.filter-btn-active {
+  position: relative;
+}
+
+.filter-btn-active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 10%;
+  width: 80%;
+  height: 2px;
+  background-color: currentColor;
+  transform: scaleX(0);
+  transition: transform 0.2s;
+}
+
+.filter-btn-active:hover::after {
+  transform: scaleX(1);
+}
+
+/* Badge pulse animation for new items */
+@keyframes badge-pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+  }
+  
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+  }
+  
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+}
+
+.badge-pulse {
+  animation: badge-pulse 1.5s infinite;
+}
+
+/* Smooth entry appearance */
+@keyframes entry-fade-in {
+  from { 
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.entry-item {
+  animation: entry-fade-in 0.3s ease-out;
+}
+
+.entry-item:nth-child(2) { animation-delay: 0.1s; }
+.entry-item:nth-child(3) { animation-delay: 0.2s; }
+.entry-item:nth-child(4) { animation-delay: 0.3s; }
+.entry-item:nth-child(5) { animation-delay: 0.4s; }
