@@ -1,0 +1,222 @@
+/* Custom Markdown Styling */
+
+/* Enhance the default styling of the markdown content */
+.markdown-preview {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  line-height: 1.7;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Style for code blocks */
+.markdown-preview pre {
+  border-radius: 0.375rem;
+  overflow: auto;
+  margin: 1.5em 0;
+}
+
+/* Style for inline code */
+.markdown-preview code:not([class*="language-"]) {
+  background-color: rgba(175, 184, 193, 0.2);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.4em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.9em;
+}
+
+/* Style for mermaid diagrams */
+.markdown-preview .mermaid {
+  text-align: center;
+  margin: 1.5em auto;
+  max-width: 100%;
+  overflow-x: auto;
+  background-color: rgba(255, 255, 255, 0.8);
+  padding: 1rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode support for mermaid */
+@media (prefers-color-scheme: dark) {
+  .markdown-preview .mermaid {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* Style for mermaid processing state */
+.markdown-preview .mermaid-loading {
+  position: relative;
+  min-height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.markdown-preview .mermaid-loading::before {
+  content: "Rendering diagram...";
+  font-style: italic;
+  color: #666;
+}
+
+/* Style for diagram reloading */
+.markdown-preview .mermaid-reloading {
+  opacity: 0.7;
+  transition: opacity 0.3s ease-in-out;
+}
+
+/* Prevent FOUC (Flash of Unstyled Content) */
+.markdown-preview .mermaid:not([data-processed="true"]) {
+  min-height: 60px;
+}
+
+/* Editor view mode buttons */
+.editor-view-button {
+  margin: 0 2px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+  background-color: transparent;
+  border: 1px solid #ddd;
+  color: #333;
+}
+
+/* Editor toolbar buttons */
+.toolbar-button {
+  background-color: transparent;
+  min-width: 30px;
+  padding: 4px 8px;
+  margin: 2px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  color: #333;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s ease-in-out;
+}
+
+.toolbar-button:hover {
+  background-color: #f5f5f5;
+  border-color: #ccc;
+}
+
+.toolbar-button:active {
+  background-color: #e5e5e5;
+  transform: translateY(1px);
+}
+
+/* Improve editor container height */
+.markdown-editor-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 400px;
+  height: 100%;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Style for katex math blocks */
+.markdown-preview .katex-block {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 1em 0;
+  text-align: center;
+}
+
+/* Style for inline katex */
+.markdown-preview .katex-inline {
+  padding: 0 0.2em;
+  font-size: 1.1em;
+}
+
+/* Style for tables */
+.markdown-preview table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  overflow: auto;
+  display: block;
+}
+
+.markdown-preview th,
+.markdown-preview td {
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  padding: 0.5em 1em;
+}
+
+.markdown-preview th {
+  background-color: rgba(127, 127, 127, 0.1);
+  font-weight: 600;
+}
+
+.markdown-preview tr:nth-child(even) {
+  background-color: rgba(127, 127, 127, 0.05);
+}
+
+/* Style for blockquotes */
+.markdown-preview blockquote {
+  border-left: 4px solid rgba(127, 127, 127, 0.3);
+  color: rgba(127, 127, 127, 0.8);
+  padding-left: 1em;
+  margin: 1em 0;
+  font-style: italic;
+}
+
+/* Style for task lists */
+.markdown-preview ul.contains-task-list {
+  list-style-type: none;
+  padding-left: 1em;
+}
+
+.markdown-preview .task-list-item input {
+  margin-right: 0.5em;
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .markdown-preview code:not([class*="language-"]) {
+    background-color: rgba(127, 127, 127, 0.2);
+  }
+  
+  .markdown-preview th {
+    background-color: rgba(127, 127, 127, 0.2);
+  }
+  
+  .markdown-preview tr:nth-child(even) {
+    background-color: rgba(127, 127, 127, 0.1);
+  }
+  
+  .toolbar-button {
+    border-color: #444;
+    color: #ddd;
+  }
+  
+  .toolbar-button:hover {
+    background-color: #383838;
+    border-color: #555;
+  }
+  
+  .toolbar-button:active {
+    background-color: #2d2d2d;
+  }
+  
+  .editor-view-button {
+    border-color: #444;
+    color: #ddd;
+  }
+  
+  .editor-view-button:hover {
+    background-color: #383838;
+  }
+}
+
+/* Syntax highlighting overrides for light mode */
+.syntax-highlighter-light {
+  background-color: #f6f8fa !important;
+}
+
+/* Syntax highlighting overrides for dark mode */
+.syntax-highlighter-dark {
+  background-color: #1e1e1e !important;
+}

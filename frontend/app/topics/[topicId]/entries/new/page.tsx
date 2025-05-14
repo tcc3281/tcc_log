@@ -5,6 +5,9 @@ import api, { uploadFile } from '../../../../../lib/api';
 import { useRouter, useParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import MarkdownEditor from '../../../../../components/MarkdownEditor';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 const NewEntryPage = () => {
   const { user } = useAuth();
@@ -26,15 +29,17 @@ const NewEntryPage = () => {
   const [isPublic, setIsPublic] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isPreview, setIsPreview] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);  const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [tempEntryId, setTempEntryId] = useState<number | null>(null);
-
   useEffect(() => {
-    if (!user || !topicId) return;
+    if (!user || !topicId) {
+      if (!user) {
+        console.error('User not authenticated, redirecting to login');
+        router.push('/login');
+      }
+      return;
+    }
     
     const fetchTopicName = async () => {
       try {
@@ -74,7 +79,6 @@ const NewEntryPage = () => {
       throw error;
     }
   };
-
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -93,16 +97,8 @@ const NewEntryPage = () => {
         const file = files[i];
         const markdownLink = await uploadFile(file, entryId);
         
-        // Thêm file vào cuối nội dung hoặc tại vị trí con trỏ
-        if (textareaRef.current) {
-          const cursorPos = textareaRef.current.selectionStart;
-          newContent = 
-            newContent.substring(0, cursorPos) + 
-            "\n" + markdownLink + "\n" + 
-            newContent.substring(cursorPos);
-        } else {
-          newContent = newContent + "\n" + markdownLink + "\n";
-        }
+        // Append the markdown link to the content
+        newContent = newContent + "\n" + markdownLink + "\n";
       }
       
       setContent(newContent);
@@ -204,54 +200,10 @@ const NewEntryPage = () => {
       setLoading(false);
     }
   };
-
-  // Hàm hỗ trợ chèn định dạng Markdown vào vị trí con trỏ
-  const insertMarkdown = (before: string, after: string = '') => {
-    if (!textareaRef.current) return;
-    
-    const textarea = textareaRef.current;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = content.substring(start, end);
-    
-    const newContent = 
-      content.substring(0, start) + 
-      before + 
-      selectedText + 
-      after + 
-      content.substring(end);
-    
-    setContent(newContent);
-    
-    // Đặt lại con trỏ sau khi chèn
-    setTimeout(() => {
-      textarea.focus();
-      textarea.setSelectionRange(
-        start + before.length,
-        end + before.length
-      );
-    }, 0);
+  // Function to handle file upload via the Markdown Editor
+  const handleFileUploadClick = () => {
+    fileInputRef.current?.click();
   };
-
-  const markdownButtons = [
-    { label: 'B', tooltip: 'Bold', onClick: () => insertMarkdown('**', '**') },
-    { label: 'I', tooltip: 'Italic', onClick: () => insertMarkdown('*', '*') },
-    { label: 'H2', tooltip: 'Heading', onClick: () => insertMarkdown('## ') },
-    { label: 'H3', tooltip: 'Subheading', onClick: () => insertMarkdown('### ') },
-    { label: '―', tooltip: 'Horizontal Rule', onClick: () => insertMarkdown('\n---\n') },
-    { label: '✓', tooltip: 'Checklist', onClick: () => insertMarkdown('- [ ] ') },
-    { label: '•', tooltip: 'Bullet List', onClick: () => insertMarkdown('- ') },
-    { label: '1.', tooltip: 'Numbered List', onClick: () => insertMarkdown('1. ') },
-    { label: '🔗', tooltip: 'Link', onClick: () => insertMarkdown('[', '](url)') },
-    { label: '💬', tooltip: 'Blockquote', onClick: () => insertMarkdown('> ') },
-    { label: '<>', tooltip: 'Code', onClick: () => insertMarkdown('`', '`') },
-    { label: '```', tooltip: 'Code Block', onClick: () => insertMarkdown('```\n', '\n```') },
-    { 
-      label: '📎', 
-      tooltip: 'Upload File/Image', 
-      onClick: () => fileInputRef.current?.click() 
-    },
-  ];
 
   if (!user) {
     return (
@@ -404,106 +356,26 @@ const NewEntryPage = () => {
           
           {/* Right Column - Content */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label htmlFor="content" className="form-label">Content</label>
-              <div className="flex items-center space-x-2">
-                <button
-                  type="button"
-                  className={`px-3 py-1 text-sm rounded ${!isPreview ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}
-                  onClick={() => setIsPreview(false)}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className={`px-3 py-1 text-sm rounded ${isPreview ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}
-                  onClick={() => setIsPreview(true)}
-                >
-                  Preview
-                </button>
+            <label htmlFor="content" className="form-label">Content</label>              <div style={{minHeight: "70vh"}} className="flex flex-col">
+                <MarkdownEditor 
+                  value={content}
+                  onChange={(value) => setContent(value)}
+                  height="100%"
+                  placeholder="Write your entry here... (Supports Markdown, MathJax, Mermaid diagrams, and more)"
+                  onFileUpload={handleFileUploadClick}
+                />
               </div>
-            </div>
-            
-            {/* Markdown Toolbar */}
-            {!isPreview && (
-              <div className="flex flex-wrap gap-1 p-2 bg-gray-100 dark:bg-gray-800 rounded-t border border-gray-300 dark:border-gray-600 border-b-0">
-                {markdownButtons.map((btn, index) => (
-                  <button
-                    key={index}
-                    type="button"
-                    onClick={btn.onClick}
-                    title={btn.tooltip}
-                    className="p-1.5 min-w-8 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-                    disabled={uploadingFile && btn.tooltip === 'Upload File/Image'}
-                  >
-                    {uploadingFile && btn.tooltip === 'Upload File/Image' ? (
-                      <span className="animate-pulse">⏳</span>
-                    ) : (
-                      btn.label
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-            
-            {isPreview ? (
-              <div className="form-input min-h-[300px] overflow-auto prose dark:prose-invert">
-                {content ? (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {content}
-                  </ReactMarkdown>
-                ) : (
-                  <p className="text-gray-500 dark:text-gray-400 italic">No content to preview</p>
-                )}
-              </div>
-            ) : (              <textarea
-                id="content"
-                ref={textareaRef}
-                placeholder="Write your entry here... (Supports Markdown)"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                onKeyDown={(e) => {
-                  // Bắt sự kiện Tab
-                  if (e.key === 'Tab') {
-                    e.preventDefault(); // Ngăn chặn hành vi mặc định (nhảy đến trường tiếp theo)
-                    
-                    const textarea = e.currentTarget;
-                    const start = textarea.selectionStart;
-                    const end = textarea.selectionEnd;
-                    
-                    // Chèn ký tự tab vào vị trí con trỏ
-                    const newContent = 
-                      content.substring(0, start) + 
-                      '\t' + 
-                      content.substring(end);
-                    
-                    setContent(newContent);
-                    
-                    // Đặt lại vị trí con trỏ sau khi chèn tab
-                    setTimeout(() => {
-                      textarea.selectionStart = textarea.selectionEnd = start + 1;
-                    }, 0);
-                  }
-                }}
-                className="form-input min-h-[300px] rounded-t-none"
-                rows={12}
-              />
-            )}
             
             <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1">
-              <p className="font-medium">Markdown Cheat Sheet:</p>
+              <p className="font-medium">Markdown Features:</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1">
                 <p><code>**bold**</code> - <strong>bold text</strong></p>
                 <p><code>*italic*</code> - <em>italic text</em></p>
                 <p><code># Heading</code> - headings</p>
                 <p><code>[link](url)</code> - <span className="text-blue-600">link</span></p>
-                <p><code>- item</code> - bullet list</p>
-                <p><code>1. item</code> - numbered list</p>
-                <p><code>![alt](img-url)</code> - image</p>
-                <p><code>{`>`} quote</code> - blockquote</p>
-                <p><code>`code`</code> - <code>inline code</code></p>
+                <p><code>$x^2$</code> - math formulas</p>
+                <p><code>```mermaid</code> - diagrams</p>
               </div>
-              <p>Click <span className="font-semibold">📎</span> to upload files/images.</p>
             </div>
           </div>
         </div>

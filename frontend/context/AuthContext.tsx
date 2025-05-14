@@ -61,10 +61,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {  const [user,
           // This provides a smoother UX while we validate in the background
           setUser(parsedUser);
           setToken(storedToken);
-          
-          // Validate token by calling the user endpoint
+            // Validate token by calling the auth/me endpoint
           try {
-            const response = await api.get(`/users/me`);
+            const response = await api.get(`/auth/me`);
             console.log('Token validation successful:', response.data);
             
             // Update user info if needed
@@ -82,12 +81,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {  const [user,
               }
             } else {
               throw new Error('Invalid user data received from API');
-            }
-          } catch (error: any) {
+            }          } catch (error: any) {
             console.error('Error validating token:', error);
             
-            // Only clear auth if the error is authentication related (401)
-            if (error.response && error.response.status === 401) {
+            // Clear auth for authentication related errors (401) or validation errors (422)
+            if (error.response && (error.response.status === 401 || error.response.status === 422)) {
               // Token is invalid or expired, clear storage
               localStorage.removeItem('user');
               localStorage.removeItem('token');
@@ -95,7 +93,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {  const [user,
               setUser(null);
               setToken(null);
               delete api.defaults.headers.common['Authorization'];
-              console.log('Invalid token - cleared auth state');
+              console.log(`Invalid token (${error.response.status}) - cleared auth state`);
             } else {
               // For other errors, keep the user logged in
               console.log('Network or server error, keeping user logged in');

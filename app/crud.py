@@ -4,6 +4,10 @@ from . import models, schemas
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+def get_password_hash(password: str):
+    """Hash a password for storing."""
+    return pwd_context.hash(password)
+
 # User CRUD
 def get_user(db: Session, user_id: int):
     return db.query(models.User).filter(models.User.user_id == user_id).first()

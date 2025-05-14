@@ -103,10 +103,9 @@ export default function ProfilePage() {
       if (formData.newPassword) {
         updateData.current_password = formData.password;
         updateData.new_password = formData.newPassword;
-      }
-        if (user?.user_id) {
+      }        if (user?.user_id) {
         // Make the actual API call to update user info
-        const response = await api.patch(`/users/me`, updateData);
+        const response = await api.patch(`/auth/me`, updateData);
         
         // Update auth context with the new user info
         if (response.data) {
