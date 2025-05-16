@@ -30,7 +30,7 @@ services:
     depends_on:
       - db
     volumes:
-      - ./uploads:/app/uploads
+      - app_uploads:/app/uploads
 
   frontend:
     build:
@@ -44,6 +44,9 @@ services:
       - NEXT_SERVER_API_URL=http://backend:8000
     depends_on:
       - backend
+    volumes:
+      - app_uploads:/app/public/uploads
 
 volumes:
   postgres_data:
+  app_uploads:

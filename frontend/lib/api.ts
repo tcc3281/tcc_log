@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Determine correct API URL based on environment
 // Use NEXT_SERVER_API_URL for server-side requests and NEXT_PUBLIC_API_URL for client-side requests
-const isServer = typeof window === 'undefined';
+export const isServer = typeof window === 'undefined';
 const serverApiUrl = process.env.NEXT_SERVER_API_URL || 'http://backend:8000';
 const clientApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 

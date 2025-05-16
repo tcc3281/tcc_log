@@ -1,12 +1,13 @@
 from datetime import datetime, timedelta
 from typing import Optional
-
-from fastapi import APIRouter, Depends, HTTPException, status
+import os
+import shutil
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 from dotenv import load_dotenv
-import os
+import uuid
 
 from .. import crud, schemas, models
 from ..database import get_db
@@ -172,6 +173,50 @@ async def update_users_me(
             )
         # Hash and set new password
         current_user.password_hash = crud.get_password_hash(user_update.new_password)
+      # Commit changes to database
+    db.commit()
+    db.refresh(current_user)
+    
+    return current_user
+
+@router.post("/me/upload-profile-image", response_model=schemas.User)
+async def upload_profile_image(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """Upload a profile image for the current user"""
+    # Validate file type
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be an image"
+        )
+    
+    # Create profiles directory if it doesn't exist
+    profiles_dir = os.path.join("uploads", "profiles")
+    os.makedirs(profiles_dir, exist_ok=True)
+    
+    # Generate a unique filename
+    file_extension = os.path.splitext(file.filename)[1]
+    unique_filename = f"{uuid.uuid4().hex}{file_extension}"
+    file_path = os.path.join(profiles_dir, unique_filename)
+    
+    # Save the file
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not upload file: {str(e)}"
+        )
+    finally:
+        file.file.close()
+    
+    # Update user's profile_image_url
+    profile_image_url = f"/uploads/profiles/{unique_filename}"
+    current_user.profile_image_url = profile_image_url
     
     # Commit changes to database
     db.commit()
