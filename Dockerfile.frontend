@@ -14,6 +14,9 @@ COPY frontend/next.config.js ./
 # Copy the rest of the application
 COPY frontend/ ./
 
+# Create uploads directories for profile images
+RUN mkdir -p public/uploads/profiles
+
 # Create .env.local file with two API URLs - one for server-side and one for client-side
 RUN echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
 RUN echo "NEXT_SERVER_API_URL=http://backend:8000" >> .env.local

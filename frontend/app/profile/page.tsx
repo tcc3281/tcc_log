@@ -1,8 +1,10 @@
 'use client';
-import { useState, useEffect, ChangeEvent, FormEvent } from 'react';
+import { useState, useEffect, ChangeEvent, FormEvent, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../lib/api';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+import { getFileUrl } from '../../lib/file-utils';
 
 interface FormData {
   username: string;
@@ -17,11 +19,13 @@ interface User {
   user_id: number;
   username: string;
   email: string;
+  profile_image_url?: string;
 }
 
 export default function ProfilePage() {
   const { user, login } = useAuth();
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [formData, setFormData] = useState<FormData>({
     username: '',
@@ -34,14 +38,21 @@ export default function ProfilePage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-
+  const [imageLoading, setImageLoading] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   useEffect(() => {
     if (user) {
       setFormData(prev => ({
         ...prev,
         username: user.username || '',
         email: user.email || ''
-      }));
+      }));      
+      // Set preview image if user has a profile image
+      if (user.profile_image_url) {
+        // Don't set previewImage initially - we'll use the profile_image_url directly
+        // with getFileUrl in the render function
+        setPreviewImage(null);
+      }
     } else {
       // Redirect if not logged in
       router.push('/login');
@@ -51,6 +62,67 @@ export default function ProfilePage() {
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+  
+  const handleImageSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      
+      // Check if file is an image
+      if (!file.type.startsWith('image/')) {
+        setError('Please select an image file');
+        return;
+      }
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setPreviewImage(event.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+  
+  const handleImageUpload = async () => {
+    if (!fileInputRef.current?.files?.length) {
+      setError('Please select an image to upload');
+      return;
+    }
+    
+    setImageLoading(true);
+    setError('');
+    
+    try {
+      const formData = new FormData();
+      formData.append('file', fileInputRef.current.files[0]);
+      
+      const response = await api.post('/auth/me/upload-profile-image', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+        if (response.data) {
+        // Update auth context with new profile image
+        const token = localStorage.getItem('token');
+        if (token && user) {
+          login({
+            ...user,
+            profile_image_url: response.data.profile_image_url
+          }, token);
+        }
+        
+        // Clear the preview image since we'll use the profile_image_url from user object
+        setPreviewImage(null);
+        setSuccess('Profile image updated successfully!');
+      }
+    } catch (err: any) {
+      console.error('Error uploading profile image:', err);
+      setError(err.response?.data?.detail || err.message || 'Failed to upload profile image');
+    } finally {
+      setImageLoading(false);
+    }
   };
 
   const handleSubmit = async (e: FormEvent) => {
@@ -139,7 +211,6 @@ export default function ProfilePage() {
       setLoading(false);
     }
   };
-
   if (!user) return null; // Don't render anything while redirecting
 
   return (
@@ -156,7 +227,59 @@ export default function ProfilePage() {
         <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
           {success}
         </div>
-      )}
+      )}      {/* Profile Image Section */}
+      <div className="mb-8 flex flex-col items-center">
+        <div className="mb-4 relative w-32 h-32 rounded-full overflow-hidden border-2 border-gray-300">
+          {previewImage ? (
+            // If we have a preview image (from local file selection), display it directly
+            <Image 
+              src={previewImage} 
+              alt="Profile" 
+              width={128} 
+              height={128} 
+              className="object-cover w-full h-full"
+              unoptimized // Disable Next.js image optimization
+            />
+          ) : user.profile_image_url ? (
+            // Use a regular img tag for the server image to avoid Next.js optimization issues
+            <img 
+              src={getFileUrl(user.profile_image_url)} 
+              alt="Profile"
+              className="object-cover w-full h-full"
+            />
+          ) : (
+            <div className="w-full h-full bg-gray-200 flex items-center justify-center text-gray-500">
+              No Image
+            </div>
+          )}
+        </div>
+        
+        <div className="flex flex-col items-center">
+          <input 
+            type="file" 
+            ref={fileInputRef}
+            onChange={handleImageSelect}
+            accept="image/*" 
+            className="hidden" 
+            id="profile-image-input"
+          />
+          <div className="flex gap-3">
+            <label 
+              htmlFor="profile-image-input" 
+              className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors cursor-pointer"
+            >
+              Select Image
+            </label>
+            <button 
+              onClick={handleImageUpload}
+              disabled={imageLoading || !previewImage}
+              className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600 transition-colors disabled:bg-green-300"
+            >
+              {imageLoading ? 'Uploading...' : 'Upload'}
+            </button>
+          </div>
+        </div>
+      </div>
       
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>

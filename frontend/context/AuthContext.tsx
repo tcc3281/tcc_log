@@ -8,6 +8,7 @@ interface User {
   user_id: number;
   username: string;
   email: string;
+  profile_image_url?: string;
 }
 
 interface AuthContextType {

@@ -21,8 +21,8 @@ COPY alembic/ ./alembic/
 COPY alembic.ini .
 COPY run_backend.py .
 
-# Create uploads directory
-RUN mkdir -p uploads
+# Create uploads directory with subdirectories for profile images
+RUN mkdir -p uploads/profiles
 
 # Expose the port the app runs on
 EXPOSE 8000

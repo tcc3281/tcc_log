@@ -2,6 +2,8 @@
 import { useAuth } from "../context/AuthContext";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
+import { getFileUrl } from "../lib/file-utils";
 
 export default function Header() {
   const { user, logout, isLoading } = useAuth();
@@ -21,13 +23,22 @@ export default function Header() {
         {isLoading ? (
           <div className="text-sm text-gray-500 dark:text-gray-400">
             <div className="animate-pulse h-8 w-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
-          </div>
-        ) : user ? (
-          <div className="flex items-center gap-6">
-            <span className="text-sm hidden sm:inline text-gray-600 dark:text-gray-300">
-              Welcome, <strong className="font-medium">{user.username}</strong>
-            </span>
-            <nav className="flex items-center gap-4">              <Link 
+          </div>        ) : user ? (
+          <div className="flex items-center gap-6">            <div className="flex items-center gap-3">
+              {user.profile_image_url && (
+                <div className="w-8 h-8 rounded-full overflow-hidden">
+                  <img 
+                    src={getFileUrl(user.profile_image_url)} 
+                    alt={user.username}
+                    className="object-cover w-full h-full"
+                  />
+                </div>
+              )}
+              <span className="text-sm hidden sm:inline text-gray-600 dark:text-gray-300">
+                Welcome, <strong className="font-medium">{user.username}</strong>
+              </span>
+            </div>
+            <nav className="flex items-center gap-4"><Link 
                 href="/topics" 
                 className="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
               >
