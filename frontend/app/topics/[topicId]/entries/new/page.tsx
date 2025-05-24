@@ -27,22 +27,11 @@ const NewEntryPage = () => {
   const [location, setLocation] = useState('');
   const [mood, setMood] = useState('');
   const [weather, setWeather] = useState('');
-  const [isPublic, setIsPublic] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);  const [loading, setLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [saving, setSaving] = useState(false);
-
-  // Weather options
-  const weatherOptions = [
-    'Sunny', 'Cloudy', 'Rainy', 'Snowy', 'Windy', 'Foggy', 'Stormy'
-  ];
-
-  // Mood options
-  const moodOptions = [
-    'Happy', 'Sad', 'Excited', 'Anxious', 'Calm', 'Tired', 'Motivated', 'Frustrated'
-  ];
 
   useEffect(() => {
     if (!user || !topicId) return;
@@ -186,39 +175,31 @@ const NewEntryPage = () => {
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
               />
             </div>
-            
-            <div>
+              <div>
               <label htmlFor="weather" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Weather <span className="text-gray-500 font-normal">(optional)</span>
               </label>
-              <select
+              <input
                 id="weather"
+                type="text"
+                placeholder="What was the weather like?"
                 value={weather}
                 onChange={(e) => setWeather(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-              >
-                <option value="">Select weather</option>
-                {weatherOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
+              />
             </div>
-            
-            <div>
+              <div>
               <label htmlFor="mood" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Mood <span className="text-gray-500 font-normal">(optional)</span>
               </label>
-              <select
+              <input
                 id="mood"
+                type="text"
+                placeholder="How were you feeling?"
                 value={mood}
                 onChange={(e) => setMood(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-              >
-                <option value="">Select mood</option>
-                {moodOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
+              />
             </div>
           </div>
           

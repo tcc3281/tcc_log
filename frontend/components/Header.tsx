@@ -45,6 +45,12 @@ export default function Header() {
                 My Topics
               </Link>
               <Link 
+                href="/gallery" 
+                className="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+              >
+                Gallery
+              </Link>
+              <Link 
                 href="/profile" 
                 className="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
               >

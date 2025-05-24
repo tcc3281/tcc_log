@@ -11,37 +11,36 @@ const apiUrl = isServer ?
  * @returns The full URL to the file
  */
 export const getFileUrl = (path: string): string => {
-  // If the path is empty or null, return an empty string
+  // If the path is empty or null, return placeholder image
   if (!path) {
-    console.log('getFileUrl: empty path');
-    return '';
+    console.warn('getFileUrl: empty path, returning placeholder');
+    return '/images/placeholder-image.svg';
   }
   
   // If the path is a data URL (base64), return it as is
   if (path.startsWith('data:')) {
-    console.log('getFileUrl: data URL, returning as is');
     return path;
   }
   
   // If the path already has the protocol and host, return it as is
   if (path.startsWith('http')) {
-    console.log('getFileUrl: already has http, returning as is', path);
     return path;
   }
-    // Check if we're running in the browser and the path is a profile image
-  if (!isServer && path.includes('/uploads/profiles/')) {
-    // Extract just the filename part: /uploads/profiles/abc123.jpg -> abc123.jpg
+  
+  // Handle uploads directory
+  if (path.includes('/uploads/')) {
+    // Extract just the filename part
     const filename = path.split('/').pop();
     
     // First try accessing the file directly from the public folder
-    const publicUrl = `/uploads/profiles/${filename}`;
+    const publicUrl = `/uploads/${filename}`;
     
-    // Fallback to the local API route if needed
-    const localApiUrl = `/api/uploads/profiles/${filename}`;
+    // Fallback to the API route
+    const apiUrlPath = `${apiUrl}/uploads/${filename}`;
     
     // In production, try to use the public URL first
-    const finalUrl = process.env.NODE_ENV === 'production' ? publicUrl : localApiUrl;
-    console.log('getFileUrl: using local url', { path, finalUrl });
+    const finalUrl = process.env.NODE_ENV === 'production' ? publicUrl : apiUrlPath;
+    console.log('getFileUrl: using uploads url', { path, finalUrl });
     return finalUrl;
   }
   

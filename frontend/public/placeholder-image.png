@@ -1,0 +1,6 @@
+<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+  <rect width="200" height="200" fill="#f8f8f8"/>
+  <path d="M85,60 L115,60 L140,140 L60,140 Z" fill="#e0e0e0"/>
+  <circle cx="125" cy="75" r="10" fill="#e0e0e0"/>
+  <text x="100" y="160" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#aaaaaa">Image not found</text>
+</svg>
