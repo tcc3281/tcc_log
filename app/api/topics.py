@@ -31,8 +31,8 @@ def read_topic(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
-    topic = crud.get_topic(db, topic_id)
-    if topic is None or topic.user_id != current_user.user_id:
+    topic = crud.get_topic(db, topic_id, current_user.user_id)
+    if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
     return topic
 
@@ -43,8 +43,8 @@ def update_topic(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
-    topic = crud.get_topic(db, topic_id)
-    if topic is None or topic.user_id != current_user.user_id:
+    topic = crud.get_topic(db, topic_id, current_user.user_id)
+    if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
     return crud.update_topic(db, topic_id, topic_update)
 
@@ -54,7 +54,20 @@ def delete_topic(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
-    topic = crud.get_topic(db, topic_id)
-    if topic is None or topic.user_id != current_user.user_id:
+    topic = crud.get_topic(db, topic_id, current_user.user_id)
+    if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
     return crud.delete_topic(db, topic_id)
+
+@router.get("/{topic_id}/entries", response_model=List[schemas.Entry])
+def read_topic_entries(
+    topic_id: int,
+    skip: int = 0, 
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user)
+):
+    topic = crud.get_topic(db, topic_id, current_user.user_id)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
+    return crud.get_entries_by_topic(db, topic_id, current_user.user_id, skip, limit)

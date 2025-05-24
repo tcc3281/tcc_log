@@ -1,0 +1,31 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package.json and package-lock.json
+COPY frontend/package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy Next.js configuration
+COPY frontend/next.config.js ./
+
+# Copy the rest of the application
+COPY frontend/ ./
+
+# Create uploads directories for profile images
+RUN mkdir -p public/uploads/profiles
+
+# Create .env.local file with two API URLs - one for server-side and one for client-side
+RUN echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
+RUN echo "NEXT_SERVER_API_URL=http://backend:8000" >> .env.local
+
+# Build the application with ESLint checks disabled
+RUN npm run build
+
+# Expose the port the app runs on
+EXPOSE 3000
+
+# Command to run the application
+CMD ["npm", "start"]

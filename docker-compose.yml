@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:14
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: Mayyeutao0?
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://postgres:Mayyeutao0?@db:5432/postgres
+      - SECRET_KEY=hZKxcKs2I92_s90ZVQNw4MF3BI1qKFFI-2PwhK8OlRM
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - RUN_MIGRATIONS=true
+      - SEED_DATA=true
+      - ADDITIONAL_CORS_ORIGINS=http://frontend:3000,http://localhost:3000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    volumes:
+      - app_uploads:/app/uploads
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_SERVER_API_URL=http://backend:8000
+    depends_on:
+      - backend
+    volumes:
+      - app_uploads:/app/public/uploads
+
+volumes:
+  postgres_data:
+  app_uploads:

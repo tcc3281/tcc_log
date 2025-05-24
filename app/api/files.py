@@ -17,10 +17,20 @@ async def upload_file(entry_id: int, file: UploadFile = File(...), db: Session =
     file_ext = os.path.splitext(file.filename)[1]
     unique_name = f"{uuid4().hex}{file_ext}"
     file_path = os.path.join(uploads_dir, unique_name)
+    
+    # Lưu nội dung file
+    contents = await file.read()
     with open(file_path, "wb") as buffer:
-        buffer.write(await file.read())
+        buffer.write(contents)
+    
     file_size = os.path.getsize(file_path)
-    file_schema = schemas.FileCreate(file_name=file.filename, file_path=file_path, file_type=file.content_type, file_size=file_size)
+    # Chỉ lưu tên file vào database, không lưu đường dẫn đầy đủ
+    file_schema = schemas.FileCreate(
+        file_name=file.filename, 
+        file_path=unique_name,  # Chỉ lưu tên file, không lưu đường dẫn đầy đủ
+        file_type=file.content_type, 
+        file_size=file_size
+    )
     return crud.create_file(db, file_schema, entry_id)
 
 @router.get("/{entry_id}", response_model=List[schemas.File])

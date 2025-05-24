@@ -6,9 +6,17 @@ from typing import Optional, List
 class UserBase(BaseModel):
     username: str
     email: str
+    profile_image_url: Optional[str] = None
 
 class UserCreate(UserBase):
     password: str
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
+    profile_image_url: Optional[str] = None
+    current_password: Optional[str] = None
+    new_password: Optional[str] = None
 
 class User(UserBase):
     user_id: int
@@ -48,8 +56,15 @@ class EntryBase(BaseModel):
     weather: Optional[str] = None
     is_public: bool = False
 
-class EntryCreate(EntryBase):
-    pass
+class EntryCreate(BaseModel):
+    topic_id: int
+    title: str
+    content: Optional[str] = None
+    entry_date: str
+    location: Optional[str] = None
+    mood: Optional[str] = None
+    weather: Optional[str] = None
+    is_public: bool
 
 class EntryUpdate(EntryBase):
     pass

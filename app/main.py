@@ -3,12 +3,21 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.staticfiles import StaticFiles
 import time
 import asyncio
+import os
 
 from .database import engine, Base
 from . import models
-from .api import users, topics, entries, files, links, tags, auth
+from .api import users, topics, entries, files, links, tags, auth, gallery
+
+# Tạo thư mục uploads nếu chưa tồn tại
+uploads_dir = "uploads"
+os.makedirs(uploads_dir, exist_ok=True)
+
+# Import seed data module
+from . import seed_data
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -54,30 +63,40 @@ app = FastAPI(
     openapi_url="/openapi.json"
 )
 
-# Define CORS origins explicitly
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    # Add these versions to handle different protocol patterns
-    "https://localhost:3000",
-    "https://127.0.0.1:3000",
-    # For development, allow all origins
-    "*"
-]
-
 # Add request logging middleware first
 app.add_middleware(RequestLoggingMiddleware)
+
+# Define allowed origins
+allowed_origins = [
+    "http://localhost:3000",      # Local development
+    "http://frontend:3000",       # Docker container to container
+    "http://127.0.0.1:3000",      # Alternative local address
+    "http://localhost:3001",      # In case of alternate port
+]
+
+# Check for additional allowed origins from environment variables
+if os.getenv('ADDITIONAL_CORS_ORIGINS'):
+    try:
+        # Split by comma and strip whitespace
+        additional_origins = [origin.strip() for origin in os.getenv('ADDITIONAL_CORS_ORIGINS').split(',')]
+        allowed_origins.extend(additional_origins)
+        logger.info(f"Added additional CORS origins: {additional_origins}")
+    except Exception as e:
+        logger.error(f"Error parsing ADDITIONAL_CORS_ORIGINS: {e}")
+
+logger.info(f"CORS allowed origins: {allowed_origins}")
 
 # Add CORS middleware with explicit method configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Process-Time", "Content-Type", "Content-Length", "Access-Control-Allow-Origin"],
-    max_age=86400,  # Cache preflight requests for 24 hours
 )
+
+# Mount uploads directory to serve static files
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 # Global handler for all OPTIONS requests - FIX: change the path to avoid conflicts
 @app.options("/api-options/{path:path}")
@@ -125,10 +144,11 @@ async def debug_routes():
 app.include_router(auth.router)
 app.include_router(users.router, prefix="/users")  # Add explicit prefix
 app.include_router(topics.router, prefix="/topics")  # Add explicit prefix
-app.include_router(entries.router, prefix="/entries")  # Add explicit prefix
+app.include_router(entries.router, prefix="/entries")  # Ensure this line exists
 app.include_router(files.router, prefix="/files")  # Add explicit prefix
 app.include_router(links.router, prefix="/links")  # Add explicit prefix
 app.include_router(tags.router, prefix="/tags")  # Add explicit prefix
+app.include_router(gallery.router, prefix="/gallery")  # Gallery router
 
 # Add global exception handler
 @app.exception_handler(Exception)
@@ -141,10 +161,16 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Initialize database tables
 @app.on_event("startup")
-def startup_event():
+async def startup_event():
     logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
     logger.info("Database initialization complete")
+    
+    # Seed database with initial data
+    try:
+        seed_data.seed_data()
+    except Exception as e:
+        logger.error(f"Error seeding database: {e}")
     
     # Log all registered routes on startup in a cleaner format
     logger.info("Registered routes:")
@@ -152,3 +178,15 @@ def startup_event():
         methods = getattr(route, "methods", set())
         method_str = ', '.join(methods) if methods else 'No methods'
         logger.info(f"{method_str} - {route.path}")
+
+    print("Registered routes:")
+    for route in app.routes:
+        # Check if route has a path and methods attributes
+        if hasattr(route, "path"):
+            methods = getattr(route, "methods", "No methods")
+            methods_str = methods if isinstance(methods, str) else str(methods)
+            print(f"{route.path} - {methods_str}")
+        else:
+            # For Mount objects or other special routes
+            name = getattr(route, "name", "Unknown")
+            print(f"Special route: {name}")
