@@ -26,21 +26,34 @@ export const getFileUrl = (path: string): string => {
   if (path.startsWith('http')) {
     return path;
   }
-  
-  // Handle uploads directory
+    // Handle uploads directory
   if (path.includes('/uploads/')) {
-    // Extract just the filename part
-    const filename = path.split('/').pop();
+    // Parse the path to extract the correct parts
+    const parts = path.split('/');
+    const isProfileImage = parts.includes('profiles');
     
-    // First try accessing the file directly from the public folder
-    const publicUrl = `/uploads/${filename}`;
+    // For profile images we need to preserve the directory structure
+    let relativePath;
+    if (isProfileImage) {
+      // Get the proper path like /uploads/profiles/filename.jpg
+      const profileIdx = parts.indexOf('profiles');
+      relativePath = ['uploads', 'profiles', parts[profileIdx + 1]].join('/');
+    } else {
+      // For regular uploads, just use the filename
+      const filename = path.split('/').pop();
+      relativePath = `uploads/${filename}`;
+    }
     
-    // Fallback to the API route
-    const apiUrlPath = `${apiUrl}/uploads/${filename}`;
+    // First try accessing the file directly from the public folder (works in Docker)
+    const publicUrl = `/${relativePath}`;
     
-    // In production, try to use the public URL first
-    const finalUrl = process.env.NODE_ENV === 'production' ? publicUrl : apiUrlPath;
-    console.log('getFileUrl: using uploads url', { path, finalUrl });
+    // Fallback to the API route (works in development)
+    const apiUrlPath = `${apiUrl}/${relativePath}`;
+    
+    // In Docker environment, use the public URL; otherwise use the API route
+    const isDocker = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+    const finalUrl = isDocker ? publicUrl : apiUrlPath;
+    console.log('getFileUrl: using uploads url', { path, finalUrl, relativePath });
     return finalUrl;
   }
   

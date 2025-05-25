@@ -12,7 +12,6 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-
   backend:
     build:
       context: .
@@ -31,7 +30,6 @@ services:
       - db
     volumes:
       - app_uploads:/app/uploads
-
   frontend:
     build:
       context: .
