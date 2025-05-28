@@ -27,11 +27,18 @@ const NewEntryPage = () => {
   const [location, setLocation] = useState('');
   const [mood, setMood] = useState('');
   const [weather, setWeather] = useState('');
-  const [isPublic, setIsPublic] = useState(false);  const [loading, setLoading] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
+
+  const [loading, setLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [saving, setSaving] = useState(false);
+  
+  // New states for file upload functionality
+  const [currentEntryId, setCurrentEntryId] = useState<number | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!user || !topicId) return;
@@ -51,6 +58,54 @@ const NewEntryPage = () => {
     fetchTopicName();
   }, [user, topicId]);
 
+  // Cleanup draft entry when navigating away
+  useEffect(() => {
+    const handleBeforeUnload = async () => {
+      if (currentEntryId && (!title.trim() || title === 'Untitled Entry') && !content.trim()) {
+        // Delete draft entry if it's empty
+        try {
+          await api.delete(`/entries/${currentEntryId}`);
+        } catch (err) {
+          console.error('Error cleaning up draft entry:', err);
+        }
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        handleBeforeUnload();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentEntryId, title, content]);
+
+  // Function to delete draft entry
+  const deleteDraftEntry = async () => {
+    if (currentEntryId) {
+      try {
+        await api.delete(`/entries/${currentEntryId}`);
+        setCurrentEntryId(null);
+      } catch (err) {
+        console.error('Error deleting draft entry:', err);
+      }
+    }
+  };
+
+  // Handle cancel - delete draft if it's empty
+  const handleCancel = async () => {
+    if (currentEntryId && (!title.trim() || title === 'Untitled Entry') && !content.trim()) {
+      await deleteDraftEntry();
+    }
+    router.push(`/topics/${topicId}/entries`);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !topicId) return;
@@ -69,7 +124,14 @@ const NewEntryPage = () => {
         is_public: isPublic
       };
 
-      const response = await api.post(`/entries`, entryData);
+      let response;
+      if (currentEntryId) {
+        // Update existing draft entry
+        response = await api.put(`/entries/${currentEntryId}`, entryData);
+      } else {
+        // Create new entry
+        response = await api.post(`/entries`, entryData);
+      }
       
       // Redirect to the new entry
       router.push(`/topics/${topicId}/entries/${response.data.entry_id}`);
@@ -77,6 +139,73 @@ const NewEntryPage = () => {
       console.error('Error creating entry:', err);
       setError('Failed to create entry. Please try again.');
       setSaving(false);
+    }
+  };
+
+  // Create a draft entry to enable file uploads
+  const createDraftEntry = async () => {
+    if (!user || !topicId || currentEntryId) return;
+
+    try {
+      const draftData = {
+        topic_id: topicId,
+        title: title || 'Untitled Entry',
+        content: content || '',
+        entry_date: entryDate,
+        location: location || null,
+        mood: mood || null, 
+        weather: weather || null,
+        is_public: false // Always start as private for drafts
+      };
+
+      const response = await api.post(`/entries`, draftData);
+      setCurrentEntryId(response.data.entry_id);
+      return response.data.entry_id;
+    } catch (err) {
+      console.error('Error creating draft entry:', err);
+      setError('Failed to create draft entry for file upload.');
+      return null;
+    }
+  };
+
+  // Handle file upload
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    try {
+      setUploadingFile(true);
+      setError(null);
+
+      // Create draft entry if it doesn't exist
+      let entryId = currentEntryId;
+      if (!entryId) {
+        entryId = await createDraftEntry();
+        if (!entryId) return; // Failed to create draft
+      }
+
+      // Upload each file and add to content
+      let newContent = content;
+      
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const markdownLink = await uploadFile(file, entryId);
+        
+        // Add markdown link to the content (at the end)
+        newContent = newContent + "\n" + markdownLink + "\n";
+      }
+      
+      setContent(newContent);
+      
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } catch (err) {
+      console.error('Error uploading file:', err);
+      setError('Failed to upload file. Please try again.');
+    } finally {
+      setUploadingFile(false);
     }
   };
 
@@ -130,8 +259,28 @@ const NewEntryPage = () => {
         </div>
       )}
 
+      {currentEntryId && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 px-4 py-3 rounded-lg mb-6 flex items-start">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+          </svg>
+          Draft saved - You can now upload files and images using the 📎 button in the editor.
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="card bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border border-gray-200 dark:border-gray-700">
+          
+          {/* Hidden file input element */}
+          <input 
+            type="file" 
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            multiple
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+            className="hidden"
+          />
+          
           <div className="mb-4">
             <label htmlFor="title" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Title <span className="text-red-500">*</span>
@@ -245,8 +394,25 @@ const NewEntryPage = () => {
             ) : (              <MarkdownEditor
                 value={content}
                 onChange={setContent}
+                onFileUpload={() => fileInputRef.current?.click()}
               />
             )}
+          </div>
+          
+          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+            <p className="font-medium">Markdown Cheat Sheet:</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1">
+              <p><code>**bold**</code> - <strong>bold text</strong></p>
+              <p><code>*italic*</code> - <em>italic text</em></p>
+              <p><code># Heading</code> - headings</p>
+              <p><code>[link](url)</code> - <span className="text-blue-600">link</span></p>
+              <p><code>- item</code> - bullet list</p>
+              <p><code>1. item</code> - numbered list</p>
+              <p><code>![alt](img-url)</code> - image</p>
+              <p><code>{`>`} quote</code> - blockquote</p>
+              <p><code>`code`</code> - <code>inline code</code></p>
+            </div>
+            <p>Click <span className="font-semibold">📎</span> to upload files/images.</p>
           </div>
           
           <div className="flex items-center mb-4">
@@ -264,16 +430,18 @@ const NewEntryPage = () => {
         </div>
         
         <div className="flex justify-between items-center">
-          <Link 
-            href={`/topics/${topicId}/entries`}
+          <button
+            type="button"
+            onClick={handleCancel}
             className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            disabled={saving || uploadingFile}
           >
             Cancel
-          </Link>
+          </button>
           
           <button
             type="submit"
-            disabled={saving || !title || !entryDate}
+            disabled={saving || uploadingFile || !title || !entryDate}
             className="px-8 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
           >
             {saving ? (
@@ -283,6 +451,14 @@ const NewEntryPage = () => {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
                 Saving...
+              </>
+            ) : uploadingFile ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Uploading...
               </>
             ) : (
               'Save Entry'
