@@ -191,13 +191,19 @@ export async function getWritingSuggestions(
   model?: string
 ): Promise<WritingSuggestionsResponse> {
   try {
-    const response = await api.post<WritingSuggestionsResponse>('/ai/writing-suggestions', {
+    console.log('Sending writing suggestions request with model:', model);
+    const requestData = {
       text,
-      model
-    });
+      model: model
+    };
+    console.log('Request data:', requestData);
+    
+    const response = await api.post<WritingSuggestionsResponse>('/ai/writing-suggestions', requestData);
+    console.log('Writing suggestions API response:', response);
     return response.data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error getting writing suggestions:', error);
+    console.error('Error response:', error.response);
     throw error;
   }
 }
