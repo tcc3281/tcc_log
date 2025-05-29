@@ -28,7 +28,7 @@ const PromptGenerator: React.FC<PromptGeneratorProps> = ({ onSelectPrompt }) => 
       });
       setPrompts(generatedPrompts);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Có lỗi xảy ra khi tạo gợi ý');
+      setError(err.response?.data?.detail || 'An error occurred while generating prompts');
     } finally {
       setLoading(false);
     }
@@ -43,12 +43,12 @@ const PromptGenerator: React.FC<PromptGeneratorProps> = ({ onSelectPrompt }) => 
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800 shadow-sm">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Gợi ý chủ đề viết nhật ký</h3>
+        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Journal Writing Prompts</h3>
         <button
           onClick={() => setExpanded(!expanded)}
           className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
         >
-          {expanded ? 'Thu gọn' : 'Mở rộng'}
+          {expanded ? 'Collapse' : 'Expand'}
         </button>
       </div>
 
@@ -57,35 +57,35 @@ const PromptGenerator: React.FC<PromptGeneratorProps> = ({ onSelectPrompt }) => 
           <div className="space-y-4 mb-4">
             <div>
               <label htmlFor="topic" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Chủ đề (tuỳ chọn):
+                Topic (optional):
               </label>
               <input
                 id="topic"
                 type="text"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                placeholder="Ví dụ: sự biết ơn, mục tiêu cá nhân..."
+                placeholder="e.g., gratitude, personal goals..."
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
               />
             </div>
 
             <div>
               <label htmlFor="theme" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Chủ đề phụ (tuỳ chọn):
+                Theme (optional):
               </label>
               <input
                 id="theme"
                 type="text"
                 value={theme}
                 onChange={(e) => setTheme(e.target.value)}
-                placeholder="Ví dụ: sự phản ánh, sáng tạo..."
+                placeholder="e.g., reflection, creativity..."
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
               />
             </div>
 
             <div>
               <label htmlFor="count" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Số lượng gợi ý:
+                Number of prompts:
               </label>
               <input
                 id="count"
@@ -104,7 +104,7 @@ const PromptGenerator: React.FC<PromptGeneratorProps> = ({ onSelectPrompt }) => 
             disabled={loading}
             className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? 'Đang tạo gợi ý...' : 'Tạo gợi ý'}
+            {loading ? 'Generating prompts...' : 'Generate Prompts'}
           </button>
 
           {error && (
@@ -115,7 +115,7 @@ const PromptGenerator: React.FC<PromptGeneratorProps> = ({ onSelectPrompt }) => 
 
           {prompts.length > 0 && (
             <div className="mt-4">
-              <h4 className="text-md font-medium text-gray-700 dark:text-gray-300 mb-2">Gợi ý:</h4>
+              <h4 className="text-md font-medium text-gray-700 dark:text-gray-300 mb-2">Prompts:</h4>
               <ul className="space-y-2">
                 {prompts.map((prompt, index) => (
                   <li key={index} className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md">

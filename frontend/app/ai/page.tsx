@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../../context/AuthContext';
 import AIStatus from '../../components/AI/AIStatus';
 import PromptGenerator from '../../components/AI/PromptGenerator';
+import WritingImprover from '../../components/AI/WritingImprover';
 import { getAvailableModels, checkAIStatus } from '../../lib/ai-utils';
 import api from '../../lib/api';
 
@@ -109,7 +110,7 @@ const AIPage: React.FC = () => {
       // Create a new entry with the selected prompt as title
       router.push(`/topics/${topics[0].topic_id}/entries/new?title=${encodeURIComponent(prompt)}`);
     } else {
-      setError('Bạn cần tạo một chủ đề trước khi có thể tạo bài nhật ký mới.');
+      setError('You need to create a topic before you can create new journal entries.');
     }
   };
 
@@ -120,7 +121,7 @@ const AIPage: React.FC = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Tính năng AI</h1>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">AI Features</h1>
         <AIStatus />
       </div>
 
@@ -133,11 +134,11 @@ const AIPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div>
           <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">
-            Gợi ý chủ đề viết nhật ký
+            Journal Writing Prompts
           </h2>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
             <p className="text-gray-600 dark:text-gray-300 mb-4">
-              AI có thể gợi ý các chủ đề viết nhật ký giúp bạn có cảm hứng sáng tạo. Chọn một gợi ý để tạo bài viết mới.
+              AI can suggest journal topics to inspire your creativity. Select a prompt to create a new entry.
             </p>
             <PromptGenerator onSelectPrompt={handleSelectPrompt} />
           </div>
@@ -145,10 +146,10 @@ const AIPage: React.FC = () => {
 
         <div>
           <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">
-            Thông tin AI
+            AI Information
           </h2>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <h3 className="font-medium text-gray-700 dark:text-gray-300 mb-2">Mô hình khả dụng:</h3>
+            <h3 className="font-medium text-gray-700 dark:text-gray-300 mb-2">Available Models:</h3>
             {modelsLoading ? (
               <div className="animate-pulse h-8 bg-gray-200 dark:bg-gray-700 rounded w-full mb-4"></div>
             ) : models.length > 0 ? (
@@ -159,24 +160,32 @@ const AIPage: React.FC = () => {
               </ul>
             ) : (
               <p className="text-gray-600 dark:text-gray-300 mb-4">
-                Không tìm thấy mô hình nào. Hãy đảm bảo LM Studio đang chạy và đã tải một mô hình.
+                No models found. Please ensure LM Studio is running and has loaded a model.
               </p>
             )}
 
-            <h3 className="font-medium text-gray-700 dark:text-gray-300 mb-2">Hướng dẫn:</h3>
+            <h3 className="font-medium text-gray-700 dark:text-gray-300 mb-2">Instructions:</h3>
             <ol className="list-decimal list-inside space-y-1 text-gray-600 dark:text-gray-300">
-              <li>Tải và cài đặt <a href="https://lmstudio.ai/" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">LM Studio</a></li>
-              <li>Tải một mô hình như Llama-3.1-8B-Instruct hoặc Qwen2.5-7B-Instruct</li>
-              <li>Mở tab Developer và nhấn "Start Server"</li>
-              <li>Làm mới trang này để sử dụng tính năng AI</li>
+              <li>Download and install <a href="https://lmstudio.ai/" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">LM Studio</a></li>
+              <li>Download a model like Llama-3.1-8B-Instruct or Qwen2.5-7B-Instruct</li>
+              <li>Open the Developer tab and click "Start Server"</li>
+              <li>Refresh this page to use AI features</li>
             </ol>
           </div>
         </div>
       </div>
 
+      {/* Writing Improvement Section */}
       <div className="mt-8">
         <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">
-          Nhật ký gần đây
+          English Writing Assistant
+        </h2>
+        <WritingImprover />
+      </div>
+
+      <div className="mt-8">
+        <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">
+          Recent Entries
         </h2>
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
           {entryLoading ? (
@@ -208,13 +217,13 @@ const AIPage: React.FC = () => {
             </div>
           ) : (
             <div className="p-6 text-center text-gray-500 dark:text-gray-400">
-              <p>Không có bài nhật ký nào.</p>
+              <p>No journal entries found.</p>
               {topics.length > 0 && (
                 <button 
                   onClick={() => router.push(`/topics/${topics[0].topic_id}/entries/new`)}
                   className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md shadow-sm transition-colors"
                 >
-                  Tạo bài nhật ký đầu tiên
+                  Create your first journal entry
                 </button>
               )}
             </div>

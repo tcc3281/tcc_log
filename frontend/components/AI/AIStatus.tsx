@@ -14,7 +14,7 @@ const AIStatus: React.FC = () => {
         const statusData = await checkAIStatus();
         setStatus(statusData);
       } catch (err: any) {
-        setError('Không thể kết nối tới dịch vụ AI');
+        setError('Unable to connect to AI service');
         console.error('Error checking AI status:', err);
       } finally {
         setLoading(false);
@@ -42,9 +42,9 @@ const AIStatus: React.FC = () => {
     <div className="flex items-center space-x-2">
       <div className={`w-3 h-3 rounded-full ${getStatusColor()}`}></div>
       <span className="text-sm text-gray-600 dark:text-gray-400">
-        {loading ? 'Đang kiểm tra trạng thái AI...' : 
-         error ? 'AI không khả dụng' : 
-         status?.status === 'available' ? 'AI hoạt động' : 'AI không khả dụng'}
+        {loading ? 'Checking AI status...' : 
+         error ? 'AI unavailable' : 
+         status?.status === 'available' ? 'AI operational' : 'AI unavailable'}
       </span>
     </div>
   );

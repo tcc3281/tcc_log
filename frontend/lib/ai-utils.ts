@@ -14,7 +14,9 @@ export interface EntryAnalysisRequest {
 export interface EntryAnalysisResponse {
   entry_id: number;
   title: string;
-  analysis: string;
+  think?: string;
+  answer: string;
+  raw_content: string;
   analysis_type: string;
 }
 
@@ -50,6 +52,42 @@ export interface AIStatusResponse {
  */
 export interface ModelListResponse {
   models: string[];
+}
+
+/**
+ * Interface for writing improvement request
+ */
+export interface WritingImprovementRequest {
+  text: string;
+  improvement_type?: 'grammar' | 'style' | 'vocabulary' | 'complete';
+}
+
+/**
+ * Interface for writing improvement response
+ */
+export interface WritingImprovementResponse {
+  original_text: string;
+  think?: string;
+  improved_text: string;
+  raw_content: string;
+  improvement_type: string;
+}
+
+/**
+ * Interface for writing suggestions request
+ */
+export interface WritingSuggestionsRequest {
+  text: string;
+}
+
+/**
+ * Interface for writing suggestions response
+ */
+export interface WritingSuggestionsResponse {
+  original_text: string;
+  think?: string;
+  suggestions: string;
+  raw_content: string;
 }
 
 /**
@@ -116,9 +154,47 @@ export async function generatePrompts(
   }
 }
 
+/**
+ * Improve writing quality with AI
+ */
+export async function improveWriting(
+  text: string,
+  improvementType: 'grammar' | 'style' | 'vocabulary' | 'complete' = 'complete'
+): Promise<WritingImprovementResponse> {
+  try {
+    const response = await api.post<WritingImprovementResponse>('/ai/improve-writing', {
+      text,
+      improvement_type: improvementType
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error improving writing:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get detailed writing improvement suggestions
+ */
+export async function getWritingSuggestions(
+  text: string
+): Promise<WritingSuggestionsResponse> {
+  try {
+    const response = await api.post<WritingSuggestionsResponse>('/ai/writing-suggestions', {
+      text
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error getting writing suggestions:', error);
+    throw error;
+  }
+}
+
 export default {
   checkAIStatus,
   getAvailableModels,
   analyzeEntry,
-  generatePrompts
+  generatePrompts,
+  improveWriting,
+  getWritingSuggestions
 };

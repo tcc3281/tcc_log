@@ -16,7 +16,9 @@ class EntryAnalysisRequest(BaseModel):
 class EntryAnalysisResponse(BaseModel):
     entry_id: int
     title: str
-    analysis: str
+    think: Optional[str] = None
+    answer: str
+    raw_content: str
     analysis_type: str
 
 class PromptsRequest(BaseModel):
@@ -36,6 +38,26 @@ class AIStatusResponse(BaseModel):
 
 class ModelListResponse(BaseModel):
     models: List[str]
+
+class WritingImprovementRequest(BaseModel):
+    text: str
+    improvement_type: str = "complete"  # grammar, style, vocabulary, complete
+
+class WritingImprovementResponse(BaseModel):
+    original_text: str
+    think: Optional[str] = None
+    improved_text: str
+    raw_content: str
+    improvement_type: str
+
+class WritingSuggestionsRequest(BaseModel):
+    text: str
+
+class WritingSuggestionsResponse(BaseModel):
+    original_text: str
+    think: Optional[str] = None
+    suggestions: str
+    raw_content: str
 
 # Create router
 router = APIRouter(tags=["ai"])
@@ -97,7 +119,7 @@ async def analyze_entry(
     
     # Perform analysis
     try:
-        analysis = await lm_studio.analyze_journal_entry(
+        analysis_result = await lm_studio.analyze_journal_entry(
             entry_title=entry.title,
             entry_content=entry.content or "",
             analysis_type=request.analysis_type
@@ -106,7 +128,9 @@ async def analyze_entry(
         return {
             "entry_id": entry.entry_id,
             "title": entry.title,
-            "analysis": analysis,
+            "think": analysis_result.get("think"),
+            "answer": analysis_result.get("answer"),
+            "raw_content": analysis_result.get("raw_content"),
             "analysis_type": request.analysis_type
         }
     except Exception as e:
@@ -143,4 +167,92 @@ async def generate_prompts(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating prompts: {str(e)}"
+        )
+
+# Improve writing quality
+@router.post("/improve-writing", response_model=WritingImprovementResponse)
+async def improve_writing(
+    request: WritingImprovementRequest,
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """Improve English writing quality with grammar, style, and vocabulary enhancements"""
+    try:
+        # Validate improvement type
+        valid_types = ["grammar", "style", "vocabulary", "complete"]
+        if request.improvement_type not in valid_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid improvement type. Must be one of: {', '.join(valid_types)}"
+            )
+        
+        # Validate text length
+        if len(request.text.strip()) < 10:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Text must be at least 10 characters long"
+            )
+        
+        if len(request.text) > 5000:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Text must be less than 5000 characters"
+            )
+        
+        improvement_result = await lm_studio.improve_writing(
+            text=request.text,
+            improvement_type=request.improvement_type
+        )
+        
+        return {
+            "original_text": request.text,
+            "think": improvement_result.get("think"),
+            "improved_text": improvement_result.get("answer"),
+            "raw_content": improvement_result.get("raw_content"),
+            "improvement_type": request.improvement_type
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error improving writing: {str(e)}"
+        )
+
+# Get writing suggestions
+@router.post("/writing-suggestions", response_model=WritingSuggestionsResponse)
+async def get_writing_suggestions(
+    request: WritingSuggestionsRequest,
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """Get detailed writing improvement suggestions for English text"""
+    try:
+        # Validate text length
+        if len(request.text.strip()) < 10:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Text must be at least 10 characters long"
+            )
+        
+        if len(request.text) > 5000:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Text must be less than 5000 characters"
+            )
+        
+        suggestions_result = await lm_studio.suggest_writing_improvements(
+            text=request.text
+        )
+        
+        return {
+            "original_text": request.text,
+            "think": suggestions_result.get("think"),
+            "suggestions": suggestions_result.get("answer"),
+            "raw_content": suggestions_result.get("raw_content")
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting writing suggestions: {str(e)}"
         )
