@@ -1,0 +1,12 @@
+version: '3.8'
+
+# Override for local development with LM Studio AI support
+services:
+  backend:
+    environment:
+      # Override AI configuration for local Docker development
+      - LM_STUDIO_BASE_URL=http://host.docker.internal:1234/v1
+      - LM_STUDIO_MODEL=deepseek-r1-distill-qwen-1.5b
+    extra_hosts:
+      # Allow container to access host machine (for LM Studio)
+      - "host.docker.internal:host-gateway" 

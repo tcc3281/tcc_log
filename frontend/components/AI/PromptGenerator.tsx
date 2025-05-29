@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { generatePrompts } from '../../lib/ai-utils';
+import React, { useState, useEffect } from 'react';
+import { generatePrompts, getAvailableModels } from '../../lib/ai-utils';
 
 interface PromptGeneratorProps {
   onSelectPrompt?: (prompt: string) => void;
@@ -15,6 +15,26 @@ const PromptGenerator: React.FC<PromptGeneratorProps> = ({ onSelectPrompt }) => 
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<boolean>(false);
+  const [models, setModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
+
+  useEffect(() => {
+    // Fetch available models when component mounts
+    const fetchModels = async () => {
+      try {
+        const availableModels = await getAvailableModels();
+        setModels(availableModels);
+        if (availableModels.length > 0) {
+          // Select first non-embedding model by default
+          const defaultModel = availableModels.find(model => !model.toLowerCase().includes('embedding')) || availableModels[0];
+          setSelectedModel(defaultModel);
+        }
+      } catch (err) {
+        console.error('Failed to fetch models:', err);
+      }
+    };
+    fetchModels();
+  }, []);
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -24,7 +44,8 @@ const PromptGenerator: React.FC<PromptGeneratorProps> = ({ onSelectPrompt }) => 
       const generatedPrompts = await generatePrompts({
         topic,
         theme,
-        count
+        count,
+        model: selectedModel
       });
       setPrompts(generatedPrompts);
     } catch (err: any) {
@@ -55,6 +76,24 @@ const PromptGenerator: React.FC<PromptGeneratorProps> = ({ onSelectPrompt }) => 
       {expanded && (
         <>
           <div className="space-y-4 mb-4">
+            <div>
+              <label htmlFor="model" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                AI Model:
+              </label>
+              <select
+                id="model"
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+              >
+                {models.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div>
               <label htmlFor="topic" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Topic (optional):

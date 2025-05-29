@@ -13,7 +13,7 @@ console.log(`API URL (${isServer ? 'server-side' : 'client-side'}):`, apiUrl);
 // Create axios instance with proper configuration
 const api = axios.create({
   baseURL: apiUrl,
-  timeout: 30000,
+  timeout: 300000,
   headers: {
     'Content-Type': 'application/json'
   },

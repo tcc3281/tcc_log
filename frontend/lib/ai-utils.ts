@@ -6,6 +6,7 @@ import api from './api';
 export interface EntryAnalysisRequest {
   entry_id: number;
   analysis_type: 'general' | 'mood' | 'summary' | 'insights';
+  model?: string;
 }
 
 /**
@@ -18,6 +19,7 @@ export interface EntryAnalysisResponse {
   answer: string;
   raw_content: string;
   analysis_type: string;
+  model?: string;
 }
 
 /**
@@ -27,6 +29,7 @@ export interface PromptsRequest {
   topic?: string;
   theme?: string;
   count?: number;
+  model?: string;
 }
 
 /**
@@ -60,6 +63,7 @@ export interface ModelListResponse {
 export interface WritingImprovementRequest {
   text: string;
   improvement_type?: 'grammar' | 'style' | 'vocabulary' | 'complete';
+  model?: string;
 }
 
 /**
@@ -78,6 +82,7 @@ export interface WritingImprovementResponse {
  */
 export interface WritingSuggestionsRequest {
   text: string;
+  model?: string;
 }
 
 /**
@@ -108,10 +113,10 @@ export async function checkAIStatus(): Promise<AIStatusResponse> {
  */
 export async function getAvailableModels(): Promise<string[]> {
   try {
-    const response = await api.get<ModelListResponse>('/ai/models');
-    return response.data.models;
+    const response = await api.get('/ai/models');
+    return response.data.models || [];
   } catch (error) {
-    console.error('Error getting available models:', error);
+    console.error('Error fetching AI models:', error);
     return [];
   }
 }
@@ -121,12 +126,14 @@ export async function getAvailableModels(): Promise<string[]> {
  */
 export async function analyzeEntry(
   entryId: number,
-  analysisType: 'general' | 'mood' | 'summary' | 'insights' = 'general'
+  analysisType: 'general' | 'mood' | 'summary' | 'insights' = 'general',
+  model?: string
 ): Promise<EntryAnalysisResponse> {
   try {
     const response = await api.post<EntryAnalysisResponse>('/ai/analyze-entry', {
       entry_id: entryId,
-      analysis_type: analysisType
+      analysis_type: analysisType,
+      model: model
     });
     return response.data;
   } catch (error) {
@@ -145,7 +152,8 @@ export async function generatePrompts(
     const response = await api.post<PromptsResponse>('/ai/generate-prompts', {
       topic: options.topic || '',
       theme: options.theme || '',
-      count: options.count || 5
+      count: options.count || 5,
+      model: options.model
     });
     return response.data.prompts;
   } catch (error) {
@@ -159,12 +167,14 @@ export async function generatePrompts(
  */
 export async function improveWriting(
   text: string,
-  improvementType: 'grammar' | 'style' | 'vocabulary' | 'complete' = 'complete'
+  improvementType: 'grammar' | 'style' | 'vocabulary' | 'complete' = 'complete',
+  model?: string
 ): Promise<WritingImprovementResponse> {
   try {
     const response = await api.post<WritingImprovementResponse>('/ai/improve-writing', {
       text,
-      improvement_type: improvementType
+      improvement_type: improvementType,
+      model
     });
     return response.data;
   } catch (error) {
@@ -177,11 +187,13 @@ export async function improveWriting(
  * Get detailed writing improvement suggestions
  */
 export async function getWritingSuggestions(
-  text: string
+  text: string,
+  model?: string
 ): Promise<WritingSuggestionsResponse> {
   try {
     const response = await api.post<WritingSuggestionsResponse>('/ai/writing-suggestions', {
-      text
+      text,
+      model
     });
     return response.data;
   } catch (error) {

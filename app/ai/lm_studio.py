@@ -2,9 +2,11 @@ import os
 import logging
 from typing import Optional, List, Dict, Any
 import httpx
+import json
 import re
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import asyncio
 
 # Load environment variables
 load_dotenv()
@@ -87,107 +89,27 @@ def parse_ai_response(content: str) -> ParsedAIResponse:
     )
 
 
-async def query_lm_studio(request: AIRequest) -> AIResponse:
+async def query_lm_studio(request: AIRequest, max_retries: int = 3) -> AIResponse:
     """
-    Send a request to LM Studio API and return the response.
-    
-    Args:
-        request: The AI request containing messages and parameters
-        
-    Returns:
-        AIResponse: The processed response from the AI model
+    Query LM Studio with retry logic
     """
-    model = request.model or AI_MODEL
-    temperature = request.temperature or DEFAULT_TEMPERATURE
-    max_tokens = request.max_tokens or DEFAULT_MAX_TOKENS
+    retry_count = 0
+    last_error = None
     
-    # If model is placeholder or invalid, get the first available model
-    if model == "your-model-identifier" or not model or model == DEFAULT_AI_MODEL:
+    while retry_count < max_retries:
         try:
-            available_models = await get_available_models()
-            if available_models:
-                # Use the first available model that's not an embedding model
-                for available_model in available_models:
-                    if "embedding" not in available_model.lower():
-                        model = available_model
-                        break
-                if not model or model == "your-model-identifier":
-                    model = available_models[0]  # Fallback to first model
-                logger.info(f"Auto-selected model: {model}")
-            else:
-                logger.warning("No models available in LM Studio")
+            response = await _query_lm_studio_internal(request)
+            return response
         except Exception as e:
-            logger.warning(f"Could not get available models: {e}, using configured model: {model}")
-    
-    # Log request details
-    logger.info(f"Querying LM Studio with model: {model}")
-    logger.debug(f"Request parameters: temp={temperature}, max_tokens={max_tokens}")
-    logger.debug(f"Message count: {len(request.messages)}")
-    
-    # Prepare request payload
-    payload = {
-        "model": model,
-        "messages": [{"role": msg.role, "content": msg.content} for msg in request.messages],
-        "temperature": temperature,
-        "max_tokens": max_tokens
-    }
-    
-    # Add tools if provided
-    if request.tools:
-        payload["tools"] = request.tools
-    
-    try:
-        # Use httpx for async HTTP requests
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            # Call the chat completions endpoint
-            response = await client.post(
-                f"{LM_STUDIO_BASE_URL}/chat/completions",
-                json=payload,
-                headers={"Content-Type": "application/json"}
-            )
-            
-            # Log response code
-            logger.info(f"LM Studio API response status: {response.status_code}")
-            
-            # Raise exception for error status codes
-            response.raise_for_status()
-            
-            # Parse response
-            response_data = response.json()
-            
-            # Extract required information
-            if "choices" in response_data and len(response_data["choices"]) > 0:
-                content = response_data["choices"][0]["message"]["content"]
-                
-                # Extract tool calls if present
-                tool_calls = None
-                if "tool_calls" in response_data["choices"][0]["message"]:
-                    tool_calls = response_data["choices"][0]["message"]["tool_calls"]
-                
-                # Create response object
-                ai_response = AIResponse(
-                    content=content,
-                    model=response_data.get("model", model),
-                    usage=response_data.get("usage"),
-                    tokens_per_second=response_data.get("tokens_per_second"),
-                    time_to_first_token=response_data.get("time_to_first_token"),
-                    tool_calls=tool_calls
-                )
-                
-                return ai_response
+            last_error = e
+            if "Client disconnected" in str(e):
+                logger.warning(f"LM Studio disconnected (attempt {retry_count + 1}/{max_retries}), retrying...")
+                retry_count += 1
+                await asyncio.sleep(1)  # Wait 1 second before retry
             else:
-                logger.error(f"Unexpected response format: {response_data}")
-                raise ValueError("Unexpected response format from LM Studio API")
-                
-    except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error when querying LM Studio API: {e}")
-        raise
-    except httpx.RequestError as e:
-        logger.error(f"Network error when querying LM Studio API: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"Error querying LM Studio API: {e}")
-        raise
+                raise e
+    
+    raise last_error
 
 
 async def analyze_journal_entry(
@@ -210,24 +132,30 @@ async def analyze_journal_entry(
     """
     # Define system prompts based on analysis type
     system_prompts = {
-        "general": """You are an AI assistant specialized in journal analysis. Please analyze the provided journal entry and 
-                      provide insights about the mood, main themes, and noteworthy points in the writing.
-                      Respond in English in a natural and empathetic manner.""",
+        "general": """Analyze this journal entry briefly. Focus on key themes and main points.
+                     Keep your response under 200 words.""",
                       
-        "mood": """Based on the provided journal content, please analyze the writer's mood and emotional state.
-                   Focus only on emotions and mood, don't go deep into the content details. 
-                   Respond in English, keep it concise around 3-5 sentences.""",
+        "mood": """Analyze the writer's mood and emotional state in 3-5 sentences.
+                   Focus only on emotions and mood.""",
                    
-        "summary": """Please summarize the main points in this journal entry. Focus on events, 
-                      thoughts and main emotions. Respond in English, maximum around 5-7 sentences.""",
+        "summary": """Summarize the main points in 3-4 sentences.
+                     Focus on key events and emotions only.""",
                       
-        "insights": """Analyze the journal and provide deep insights about the writer, 
-                       hidden behavioral patterns or thoughts, and suggest what the writer might 
-                       learn from this experience. Respond in English."""
+        "insights": """Provide 2-3 key insights about the writer's thoughts or patterns.
+                      Keep it brief and focused."""
     }
     
-    # Get appropriate prompt or use default
+    # Define max tokens for each analysis type
+    max_tokens_map = {
+        "general": 800,
+        "mood": 800,
+        "summary": 600,
+        "insights": 700
+    }
+    
+    # Get appropriate prompt and max tokens
     system_prompt = system_prompts.get(analysis_type, system_prompts["general"])
+    max_tokens = max_tokens_map.get(analysis_type, 800)
     
     # Prepare messages for the AI
     messages = [
@@ -243,11 +171,11 @@ async def analyze_journal_entry(
         messages=messages,
         model=model,
         temperature=0.7,
-        max_tokens=1000
+        max_tokens=max_tokens
     )
     
     try:
-        # Query the AI
+        # Query the AI with retry logic
         response = await query_lm_studio(request)
         
         # Parse the response to separate think and answer
@@ -261,10 +189,14 @@ async def analyze_journal_entry(
         }
     except Exception as e:
         logger.error(f"Error analyzing journal entry: {e}")
+        error_msg = str(e)
+        if "Client disconnected" in error_msg:
+            error_msg = "Analysis took too long. Try a shorter entry or different analysis type."
+        
         return {
             "think": None,
-            "answer": f"Error analyzing journal entry: {str(e)}",
-            "raw_content": f"Error analyzing journal entry: {str(e)}",
+            "answer": error_msg,
+            "raw_content": error_msg,
             "analysis_type": analysis_type
         }
 
@@ -540,3 +472,133 @@ async def check_ai_service() -> Dict[str, Any]:
             "message": f"Could not connect to LM Studio API: {str(e)}",
             "base_url": LM_STUDIO_BASE_URL
         }
+
+
+async def _query_lm_studio_internal(request: AIRequest) -> AIResponse:
+    """
+    Internal function to send a request to LM Studio API with streaming support
+    """
+    model = request.model or AI_MODEL
+    temperature = request.temperature or DEFAULT_TEMPERATURE
+    max_tokens = request.max_tokens or DEFAULT_MAX_TOKENS
+    
+    # If model is placeholder or invalid, get the first available model
+    if model == "your-model-identifier" or not model or model == DEFAULT_AI_MODEL:
+        try:
+            available_models = await get_available_models()
+            if available_models:
+                # Use the first available model that's not an embedding model
+                for available_model in available_models:
+                    if "embedding" not in available_model.lower():
+                        model = available_model
+                        break
+                if not model or model == "your-model-identifier":
+                    model = available_models[0]  # Fallback to first model
+                logger.info(f"Auto-selected model: {model}")
+            else:
+                logger.warning("No models available in LM Studio")
+        except Exception as e:
+            logger.warning(f"Could not get available models: {e}, using configured model: {model}")
+    
+    # Log request details
+    logger.info(f"Querying LM Studio with model: {model}")
+    logger.debug(f"Request parameters: temp={temperature}, max_tokens={max_tokens}")
+    logger.debug(f"Message count: {len(request.messages)}")
+    
+    # Prepare request payload
+    payload = {
+        "model": model,
+        "messages": [{"role": msg.role, "content": msg.content} for msg in request.messages],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": True  # Enable streaming for longer responses
+    }
+    
+    # Add tools if provided
+    if request.tools:
+        payload["tools"] = request.tools
+    
+    try:
+        # Use httpx for async HTTP requests with increased timeout
+        async with httpx.AsyncClient(timeout=300.0) as client:  # 5 minutes timeout
+            # Call the chat completions endpoint with streaming
+            async with client.stream(
+                "POST",
+                f"{LM_STUDIO_BASE_URL}/chat/completions",
+                json=payload,
+                headers={"Content-Type": "application/json"}
+            ) as response:
+                # Raise exception for error status codes
+                response.raise_for_status()
+                
+                # Initialize variables for collecting streamed response
+                full_content = ""
+                model_name = model
+                usage_info = None
+                
+                # Process the stream
+                async for line in response.aiter_lines():
+                    if line.strip():
+                        try:
+                            # Remove "data: " prefix if present
+                            if line.startswith("data: "):
+                                line = line[6:]
+                            
+                            # Skip [DONE] message
+                            if line.strip() == "[DONE]":
+                                continue
+                                
+                            # Parse the JSON data
+                            try:
+                                chunk_data = json.loads(line)
+                                
+                                # Extract content from the chunk
+                                if "choices" in chunk_data and chunk_data["choices"]:
+                                    choice = chunk_data["choices"][0]
+                                    if "delta" in choice and "content" in choice["delta"]:
+                                        content = choice["delta"]["content"]
+                                        full_content += content
+                                        logger.debug(f"Received content chunk: {content}")
+                                    
+                                    # Update model name if available
+                                    if "model" in chunk_data:
+                                        model_name = chunk_data["model"]
+                                    
+                                    # Update usage information if available
+                                    if "usage" in chunk_data:
+                                        usage_info = chunk_data["usage"]
+                                        
+                            except json.JSONDecodeError as je:
+                                logger.warning(f"Invalid JSON in chunk: {line}")
+                                continue
+                                
+                        except Exception as e:
+                            logger.warning(f"Error processing chunk: {e}")
+                            continue
+                
+                logger.info(f"Completed streaming. Total content length: {len(full_content)}")
+                
+                if not full_content:
+                    raise ValueError("No content received from the stream")
+                
+                # Create response object with collected data
+                ai_response = AIResponse(
+                    content=full_content,
+                    model=model_name,
+                    usage=usage_info,
+                    tokens_per_second=None,  # Not available in streaming mode
+                    time_to_first_token=None,  # Not available in streaming mode
+                    tool_calls=None  # Tool calls not supported in streaming mode
+                )
+                
+                return ai_response
+                
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error when querying LM Studio API: {e}")
+        raise
+    except httpx.RequestError as e:
+        logger.error(f"Network error when querying LM Studio API: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Error querying LM Studio API: {e}")
+        raise
