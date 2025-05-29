@@ -2,6 +2,7 @@ import os
 import logging
 from typing import Optional, List, Dict, Any
 import httpx
+import re
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -48,6 +49,44 @@ class AIResponse(BaseModel):
     tool_calls: Optional[List[Dict[str, Any]]] = None
 
 
+class ParsedAIResponse(BaseModel):
+    """Structure for parsed AI response with think and answer sections"""
+    think: Optional[str] = None
+    answer: str
+    raw_content: str
+
+
+def parse_ai_response(content: str) -> ParsedAIResponse:
+    """
+    Parse AI response to separate think and answer sections
+    
+    Args:
+        content: Raw AI response content
+        
+    Returns:
+        ParsedAIResponse: Structured response with think and answer sections
+    """
+    # Pattern to match <think>...</think> sections
+    think_pattern = r'<think>\s*(.*?)\s*</think>'
+    
+    # Find think section
+    think_match = re.search(think_pattern, content, re.DOTALL | re.IGNORECASE)
+    
+    if think_match:
+        think_content = think_match.group(1).strip()
+        # Remove the think section from the content to get the answer
+        answer_content = re.sub(think_pattern, '', content, flags=re.DOTALL | re.IGNORECASE).strip()
+    else:
+        think_content = None
+        answer_content = content.strip()
+    
+    return ParsedAIResponse(
+        think=think_content,
+        answer=answer_content,
+        raw_content=content
+    )
+
+
 async def query_lm_studio(request: AIRequest) -> AIResponse:
     """
     Send a request to LM Studio API and return the response.
@@ -61,6 +100,24 @@ async def query_lm_studio(request: AIRequest) -> AIResponse:
     model = request.model or AI_MODEL
     temperature = request.temperature or DEFAULT_TEMPERATURE
     max_tokens = request.max_tokens or DEFAULT_MAX_TOKENS
+    
+    # If model is placeholder or invalid, get the first available model
+    if model == "your-model-identifier" or not model or model == DEFAULT_AI_MODEL:
+        try:
+            available_models = await get_available_models()
+            if available_models:
+                # Use the first available model that's not an embedding model
+                for available_model in available_models:
+                    if "embedding" not in available_model.lower():
+                        model = available_model
+                        break
+                if not model or model == "your-model-identifier":
+                    model = available_models[0]  # Fallback to first model
+                logger.info(f"Auto-selected model: {model}")
+            else:
+                logger.warning("No models available in LM Studio")
+        except Exception as e:
+            logger.warning(f"Could not get available models: {e}, using configured model: {model}")
     
     # Log request details
     logger.info(f"Querying LM Studio with model: {model}")
@@ -81,7 +138,7 @@ async def query_lm_studio(request: AIRequest) -> AIResponse:
     
     try:
         # Use httpx for async HTTP requests
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             # Call the chat completions endpoint
             response = await client.post(
                 f"{LM_STUDIO_BASE_URL}/chat/completions",
@@ -138,7 +195,7 @@ async def analyze_journal_entry(
     entry_content: str, 
     analysis_type: str = "general", 
     model: Optional[str] = None
-) -> str:
+) -> Dict[str, Any]:
     """
     Analyze a journal entry using the AI model.
     
@@ -149,24 +206,24 @@ async def analyze_journal_entry(
         model: Optional model override
         
     Returns:
-        str: Analysis result
+        Dict: Analysis result with think, answer, and raw content
     """
     # Define system prompts based on analysis type
     system_prompts = {
-        "general": """Bạn là một trợ lý AI phân tích nhật ký. Hãy phân tích nội dung nhật ký được cung cấp và 
-                      đưa ra những nhận xét về tâm trạng, chủ đề chính, và những điểm đáng chú ý trong bài viết.
-                      Hãy trả lời bằng tiếng Việt một cách tự nhiên và thấu cảm.""",
+        "general": """You are an AI assistant specialized in journal analysis. Please analyze the provided journal entry and 
+                      provide insights about the mood, main themes, and noteworthy points in the writing.
+                      Respond in English in a natural and empathetic manner.""",
                       
-        "mood": """Dựa trên nội dung nhật ký được cung cấp, hãy phân tích tâm trạng của người viết.
-                   Chỉ tập trung vào cảm xúc và tâm trạng, không đi sâu vào nội dung. 
-                   Hãy trả lời bằng tiếng Việt, ngắn gọn khoảng 3-5 câu.""",
+        "mood": """Based on the provided journal content, please analyze the writer's mood and emotional state.
+                   Focus only on emotions and mood, don't go deep into the content details. 
+                   Respond in English, keep it concise around 3-5 sentences.""",
                    
-        "summary": """Hãy tóm tắt những điểm chính trong bài nhật ký này. Tập trung vào sự kiện, 
-                      suy nghĩ và cảm xúc chính. Hãy trả lời bằng tiếng Việt, tối đa khoảng 5-7 câu.""",
+        "summary": """Please summarize the main points in this journal entry. Focus on events, 
+                      thoughts and main emotions. Respond in English, maximum around 5-7 sentences.""",
                       
-        "insights": """Phân tích nhật ký và đưa ra những hiểu biết sâu sắc về người viết, 
-                       những mẫu hành vi hoặc suy nghĩ tiềm ẩn, và đề xuất điều người viết có thể 
-                       học hỏi từ trải nghiệm này. Hãy trả lời bằng tiếng Việt."""
+        "insights": """Analyze the journal and provide deep insights about the writer, 
+                       hidden behavioral patterns or thoughts, and suggest what the writer might 
+                       learn from this experience. Respond in English."""
     }
     
     # Get appropriate prompt or use default
@@ -177,7 +234,7 @@ async def analyze_journal_entry(
         AIMessage(role="system", content=system_prompt),
         AIMessage(
             role="user", 
-            content=f"Tiêu đề nhật ký: {entry_title}\n\nNội dung nhật ký:\n{entry_content}"
+            content=f"Journal title: {entry_title}\n\nJournal content:\n{entry_content}"
         )
     ]
     
@@ -192,10 +249,170 @@ async def analyze_journal_entry(
     try:
         # Query the AI
         response = await query_lm_studio(request)
-        return response.content
+        
+        # Parse the response to separate think and answer
+        parsed_response = parse_ai_response(response.content)
+        
+        return {
+            "think": parsed_response.think,
+            "answer": parsed_response.answer,
+            "raw_content": parsed_response.raw_content,
+            "analysis_type": analysis_type
+        }
     except Exception as e:
         logger.error(f"Error analyzing journal entry: {e}")
-        return f"Lỗi khi phân tích nhật ký: {str(e)}"
+        return {
+            "think": None,
+            "answer": f"Error analyzing journal entry: {str(e)}",
+            "raw_content": f"Error analyzing journal entry: {str(e)}",
+            "analysis_type": analysis_type
+        }
+
+
+async def improve_writing(
+    text: str,
+    improvement_type: str = "grammar",
+    model: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Improve the writing quality of English text.
+    
+    Args:
+        text: The English text to improve
+        improvement_type: Type of improvement: grammar, style, vocabulary, complete
+        model: Optional model override
+        
+    Returns:
+        Dict: Improved text with think, answer, and raw content
+    """
+    # Define system prompts for different improvement types
+    system_prompts = {
+        "grammar": """You are an expert English grammar editor. Your task is to correct grammar mistakes, fix punctuation, and ensure proper sentence structure while preserving the original meaning and tone. Only make necessary corrections without changing the writing style.""",
+        
+        "style": """You are a professional writing coach. Improve the writing style to make it more engaging, clear, and natural. Enhance sentence flow, vary sentence length, and improve transitions while maintaining the author's voice and message.""",
+        
+        "vocabulary": """You are an English vocabulary specialist. Replace basic or repetitive words with more sophisticated, precise vocabulary. Improve word choice to make the writing more expressive and eloquent while keeping it natural and accessible.""",
+        
+        "complete": """You are a comprehensive writing editor. Improve this English text by:
+1. Correcting grammar, spelling, and punctuation errors
+2. Enhancing vocabulary with more precise and varied word choices
+3. Improving sentence structure and flow
+4. Making the writing more engaging and polished
+5. Ensuring clarity and coherence
+
+Maintain the original meaning, tone, and personal voice while making it significantly better."""
+    }
+    
+    # Get appropriate prompt
+    system_prompt = system_prompts.get(improvement_type, system_prompts["complete"])
+    
+    # Prepare messages
+    messages = [
+        AIMessage(role="system", content=system_prompt),
+        AIMessage(role="user", content=f"Please improve this text:\n\n{text}")
+    ]
+    
+    # Create request
+    request = AIRequest(
+        messages=messages,
+        model=model,
+        temperature=0.3,  # Lower temperature for more consistent improvements
+        max_tokens=1500
+    )
+    
+    try:
+        # Query the AI
+        response = await query_lm_studio(request)
+        
+        # Parse the response to separate think and answer
+        parsed_response = parse_ai_response(response.content)
+        
+        return {
+            "think": parsed_response.think,
+            "answer": parsed_response.answer,
+            "raw_content": parsed_response.raw_content,
+            "improvement_type": improvement_type,
+            "original_text": text
+        }
+    except Exception as e:
+        logger.error(f"Error improving writing: {e}")
+        return {
+            "think": None,
+            "answer": f"Error improving text: {str(e)}",
+            "raw_content": f"Error improving text: {str(e)}",
+            "improvement_type": improvement_type,
+            "original_text": text
+        }
+
+
+async def suggest_writing_improvements(
+    text: str,
+    model: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Provide detailed writing improvement suggestions for English text.
+    
+    Args:
+        text: The English text to analyze
+        model: Optional model override
+        
+    Returns:
+        Dict containing different types of suggestions with think and answer sections
+    """
+    system_prompt = """You are an expert English writing tutor. Analyze the provided text and give specific, actionable feedback in these categories:
+
+1. Grammar & Mechanics: Point out specific grammar errors, punctuation issues, or spelling mistakes
+2. Vocabulary & Word Choice: Suggest better word choices or identify repetitive/weak words
+3. Style & Flow: Comment on sentence structure, transitions, and overall readability
+4. Content & Clarity: Identify unclear parts or suggest ways to express ideas more effectively
+
+Format your response as:
+**Grammar & Mechanics:**
+[Your feedback here]
+
+**Vocabulary & Word Choice:**
+[Your feedback here]
+
+**Style & Flow:**
+[Your feedback here]
+
+**Content & Clarity:**
+[Your feedback here]
+
+Be specific and constructive in your feedback."""
+    
+    messages = [
+        AIMessage(role="system", content=system_prompt),
+        AIMessage(role="user", content=f"Please analyze and provide improvement suggestions for this text:\n\n{text}")
+    ]
+    
+    request = AIRequest(
+        messages=messages,
+        model=model,
+        temperature=0.4,
+        max_tokens=1000
+    )
+    
+    try:
+        response = await query_lm_studio(request)
+        
+        # Parse the response to separate think and answer
+        parsed_response = parse_ai_response(response.content)
+        
+        return {
+            "think": parsed_response.think,
+            "answer": parsed_response.answer,
+            "raw_content": parsed_response.raw_content,
+            "original_text": text
+        }
+    except Exception as e:
+        logger.error(f"Error getting writing suggestions: {e}")
+        return {
+            "think": None,
+            "answer": f"Error analyzing text: {str(e)}",
+            "raw_content": f"Error analyzing text: {str(e)}",
+            "original_text": text
+        }
 
 
 async def generate_journaling_prompts(
@@ -217,16 +434,16 @@ async def generate_journaling_prompts(
         List[str]: List of generated prompts
     """
     # Construct base prompt
-    base_content = f"Tạo {count} gợi ý chủ đề viết nhật ký"
+    base_content = f"Generate {count} journaling prompts"
     if topic:
-        base_content += f" về {topic}"
+        base_content += f" about {topic}"
     if theme:
-        base_content += f" với chủ đề {theme}"
+        base_content += f" with theme {theme}"
     
     # Prepare system message
-    system_message = """Bạn là một trợ lý sáng tạo chuyên về viết nhật ký. 
-                       Hãy tạo các gợi ý viết nhật ký hấp dẫn, sâu sắc và đầy cảm hứng.
-                       Trả lời bằng một danh sách các gợi ý, mỗi gợi ý trên một dòng, bắt đầu bằng dấu gạch đầu dòng (-)."""
+    system_message = """You are a creative assistant specialized in journaling. 
+                       Create engaging, thoughtful and inspiring journaling prompts.
+                       Respond with a list of prompts, each prompt on a new line, starting with a bullet point (-)."""
     
     # Prepare messages for the AI
     messages = [
@@ -261,7 +478,7 @@ async def generate_journaling_prompts(
         return prompts[:count]
     except Exception as e:
         logger.error(f"Error generating journaling prompts: {e}")
-        return [f"Lỗi khi tạo gợi ý viết nhật ký: {str(e)}"]
+        return [f"Error generating journaling prompts: {str(e)}"]
 
 
 async def get_available_models() -> List[str]:
