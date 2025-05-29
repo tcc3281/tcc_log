@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { improveWriting, getWritingSuggestions, WritingImprovementResponse, WritingSuggestionsResponse } from '../../lib/ai-utils';
+import React, { useState, useEffect } from 'react';
+import { improveWriting, getWritingSuggestions, getAvailableModels, WritingImprovementResponse, WritingSuggestionsResponse } from '../../lib/ai-utils';
 import AnalysisDisplay from './AnalysisDisplay';
 
 interface WritingImproverProps {
@@ -18,6 +18,26 @@ const WritingImprover: React.FC<WritingImproverProps> = ({ onImprovedText, class
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'improve' | 'suggestions'>('improve');
+  const [models, setModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
+
+  useEffect(() => {
+    // Fetch available models when component mounts
+    const fetchModels = async () => {
+      try {
+        const availableModels = await getAvailableModels();
+        setModels(availableModels);
+        if (availableModels.length > 0) {
+          // Select first non-embedding model by default
+          const defaultModel = availableModels.find(model => !model.toLowerCase().includes('embedding')) || availableModels[0];
+          setSelectedModel(defaultModel);
+        }
+      } catch (err) {
+        console.error('Failed to fetch models:', err);
+      }
+    };
+    fetchModels();
+  }, []);
 
   const handleImprove = async () => {
     if (!inputText.trim()) {
@@ -35,7 +55,7 @@ const WritingImprover: React.FC<WritingImproverProps> = ({ onImprovedText, class
     setImprovementResult(null);
 
     try {
-      const response = await improveWriting(inputText, improvementType);
+      const response = await improveWriting(inputText, improvementType, selectedModel);
       setImprovementResult(response);
       
       if (onImprovedText) {
@@ -64,7 +84,7 @@ const WritingImprover: React.FC<WritingImproverProps> = ({ onImprovedText, class
     setSuggestionsResult(null);
 
     try {
-      const response = await getWritingSuggestions(inputText);
+      const response = await getWritingSuggestions(inputText, selectedModel);
       setSuggestionsResult(response);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to get suggestions. Please try again.');
@@ -141,6 +161,24 @@ const WritingImprover: React.FC<WritingImproverProps> = ({ onImprovedText, class
       </div>
 
       <div className="p-4 space-y-4">
+        {/* Model Selection */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            AI Model
+          </label>
+          <select
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+          >
+            {models.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* Input Text Area */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

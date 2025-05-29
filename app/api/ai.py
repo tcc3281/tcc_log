@@ -12,6 +12,7 @@ from ..ai import lm_studio
 class EntryAnalysisRequest(BaseModel):
     entry_id: int
     analysis_type: str = "general"  # general, mood, summary, insights
+    model: Optional[str] = None  # Optional model selection
 
 class EntryAnalysisResponse(BaseModel):
     entry_id: int
@@ -20,6 +21,7 @@ class EntryAnalysisResponse(BaseModel):
     answer: str
     raw_content: str
     analysis_type: str
+    model: Optional[str] = None  # Added to show which model was used
 
 class PromptsRequest(BaseModel):
     topic: Optional[str] = ""
@@ -122,7 +124,8 @@ async def analyze_entry(
         analysis_result = await lm_studio.analyze_journal_entry(
             entry_title=entry.title,
             entry_content=entry.content or "",
-            analysis_type=request.analysis_type
+            analysis_type=request.analysis_type,
+            model=request.model
         )
         
         return {
@@ -131,7 +134,8 @@ async def analyze_entry(
             "think": analysis_result.get("think"),
             "answer": analysis_result.get("answer"),
             "raw_content": analysis_result.get("raw_content"),
-            "analysis_type": request.analysis_type
+            "analysis_type": request.analysis_type,
+            "model": analysis_result.get("model")  # Return the model used
         }
     except Exception as e:
         raise HTTPException(

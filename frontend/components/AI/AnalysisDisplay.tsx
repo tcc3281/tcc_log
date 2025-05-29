@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { EntryAnalysisResponse } from '../../lib/ai-utils';
 
 interface AnalysisDisplayProps {
@@ -98,9 +99,7 @@ const AnalysisDisplay: React.FC<AnalysisDisplayProps> = ({ analysis, className =
           <div className="flex-1">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Analysis Result</h4>
             <div className="text-gray-900 dark:text-white prose prose-sm dark:prose-invert max-w-none">
-              {analysis.answer.split('\n').map((paragraph, index) => (
-                <p key={index} className="mb-2 last:mb-0">{paragraph}</p>
-              ))}
+              <ReactMarkdown>{analysis.answer}</ReactMarkdown>
             </div>
           </div>
         </div>

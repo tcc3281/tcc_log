@@ -24,12 +24,16 @@ services:
       - RUN_MIGRATIONS=true
       - SEED_DATA=true
       - ADDITIONAL_CORS_ORIGINS=http://frontend:3000,http://localhost:3000
+      - LM_STUDIO_BASE_URL=http://host.docker.internal:1234/v1
+      - LM_STUDIO_MODEL=deepseek-r1-distill-qwen-1.5b
     ports:
       - "8000:8000"
     depends_on:
       - db
     volumes:
       - app_uploads:/app/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
   frontend:
     build:
       context: .
