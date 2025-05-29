@@ -10,7 +10,7 @@ import os
 
 from .database import engine, Base
 from . import models
-from .api import users, topics, entries, files, links, tags, auth, gallery
+from .api import users, topics, entries, files, links, tags, auth, gallery, ai
 
 # Tạo thư mục uploads nếu chưa tồn tại
 uploads_dir = "uploads"
@@ -149,6 +149,7 @@ app.include_router(files.router, prefix="/files")  # Add explicit prefix
 app.include_router(links.router, prefix="/links")  # Add explicit prefix
 app.include_router(tags.router, prefix="/tags")  # Add explicit prefix
 app.include_router(gallery.router, prefix="/gallery")  # Gallery router
+app.include_router(ai.router, prefix="/ai")  # AI functionality
 
 # Add global exception handler
 @app.exception_handler(Exception)

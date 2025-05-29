@@ -10,6 +10,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import mermaid from 'mermaid';
 import 'katex/dist/katex.min.css';
+import EntryAnalysis from '../../../../../components/AI/EntryAnalysis';
 
 // Initialize mermaid
 if (typeof window !== 'undefined') {
@@ -552,8 +553,14 @@ const EntryDetailPage = () => {
           </div>
         ) : (
           <p className="text-gray-500 dark:text-gray-400 italic">No content provided.</p>
-        )}
-      </div>
+        )}      </div>
+      
+      {/* AI Analysis Component */}
+      {entry && (
+        <div className="mt-6 mb-6">
+          <EntryAnalysis entryId={entry.entry_id} entryTitle={entry.title} />
+        </div>
+      )}
       
       <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Entry Details</h3>
