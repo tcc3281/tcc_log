@@ -64,17 +64,52 @@ def run_migrations():
     # Run migrations
     try:
         logger.info("Running database migrations...")
-        subprocess.run(
+        result = subprocess.run(
             ["alembic", "upgrade", "head"],
             check=True,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
+            text=True
         )
         logger.info("Database migrations completed successfully")
+        if result.stdout:
+            logger.info(f"Migration output: {result.stdout}")
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to run migrations: {e}")
-        logger.error(f"STDOUT: {e.stdout.decode() if e.stdout else ''}")
-        logger.error(f"STDERR: {e.stderr.decode() if e.stderr else ''}")
+        stderr_output = e.stderr if e.stderr else ''
+        stdout_output = e.stdout if e.stdout else ''
+        logger.error(f"STDOUT: {stdout_output}")
+        logger.error(f"STDERR: {stderr_output}")
+        
+        # Check if it's a revision not found error
+        if "Can't locate revision identified by" in stderr_output:
+            logger.warning("Detected migration revision mismatch. Attempting to reset migrations...")
+            try:
+                # Try to reset migrations
+                logger.info("Dropping alembic_version table and reinitializing...")
+                from sqlalchemy import create_engine, text
+                engine = create_engine(db_url)
+                
+                with engine.connect() as connection:
+                    connection.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE;"))
+                    connection.commit()
+                    logger.info("Dropped alembic_version table")
+                
+                # Stamp with current head
+                logger.info("Stamping database with current revision...")
+                subprocess.run(
+                    ["alembic", "stamp", "head"],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                logger.info("Database stamped successfully. Migrations reset complete.")
+                
+            except Exception as reset_error:
+                logger.error(f"Failed to reset migrations: {reset_error}")
+                logger.error("Manual intervention may be required.")
+        else:
+            logger.error("Migration failed with unknown error. Manual intervention may be required.")
 
 def main():
     logger.info("Starting Journal API server...")

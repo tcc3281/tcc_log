@@ -2,13 +2,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../../../../context/AuthContext';
 import api, { uploadFile } from '../../../../../lib/api';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import MarkdownEditor from '../../../../../components/MarkdownEditor';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Link from 'next/link';
+import PromptGenerator from '../../../../../components/AI/PromptGenerator';
 
 const NewEntryPage = () => {
   const { user } = useAuth();
@@ -39,7 +40,8 @@ const NewEntryPage = () => {
   const [currentEntryId, setCurrentEntryId] = useState<number | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  const searchParams = useSearchParams();
+  
   useEffect(() => {
     if (!user || !topicId) return;
 
@@ -47,6 +49,12 @@ const NewEntryPage = () => {
       try {
         const response = await api.get(`/topics/${topicId}`);
         setTopicName(response.data.topic_name);
+        
+        // Check for title parameter in URL
+        const titleParam = searchParams?.get('title');
+        if (titleParam) {
+          setTitle(decodeURIComponent(titleParam));
+        }
       } catch (err) {
         console.error('Error fetching topic:', err);
         setError('Failed to load topic information.');
@@ -56,7 +64,7 @@ const NewEntryPage = () => {
     };
 
     fetchTopicName();
-  }, [user, topicId]);
+  }, [user, topicId, searchParams]);
 
   // Cleanup draft entry when navigating away
   useEffect(() => {
@@ -228,8 +236,7 @@ const NewEntryPage = () => {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl">
-      <div className="mb-6">
+    <div className="container mx-auto px-4 py-8 max-w-4xl">      <div className="mb-6">
         <Link 
           href={`/topics/${topicId}/entries`} 
           className="flex items-center text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 mb-4"
@@ -247,6 +254,14 @@ const NewEntryPage = () => {
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Create New Entry in {topicName}</h1>
+        </div>
+        
+        {/* AI Prompt Generator */}
+        <div className="mb-6">
+          <PromptGenerator onSelectPrompt={(prompt) => {
+            setTitle(prompt);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }} />
         </div>
       </div>
       
