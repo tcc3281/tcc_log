@@ -54,6 +54,7 @@ class WritingImprovementResponse(BaseModel):
 
 class WritingSuggestionsRequest(BaseModel):
     text: str
+    model: Optional[str] = None
 
 class WritingSuggestionsResponse(BaseModel):
     original_text: str
@@ -244,7 +245,8 @@ async def get_writing_suggestions(
             )
         
         suggestions_result = await lm_studio.suggest_writing_improvements(
-            text=request.text
+            text=request.text,
+            model=request.model
         )
         
         return {
@@ -256,6 +258,9 @@ async def get_writing_suggestions(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        print(f"Error getting writing suggestions: {str(e)}")
+        print(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error getting writing suggestions: {str(e)}"

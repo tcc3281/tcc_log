@@ -291,6 +291,8 @@ async def suggest_writing_improvements(
     Returns:
         Dict containing different types of suggestions with think and answer sections
     """
+    logger.debug(f"suggest_writing_improvements called with model: {model}")
+    
     system_prompt = """You are an expert English writing tutor. Analyze the provided text and give specific, actionable feedback in these categories:
 
 1. Grammar & Mechanics: Point out specific grammar errors, punctuation issues, or spelling mistakes

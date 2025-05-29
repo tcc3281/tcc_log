@@ -6,11 +6,12 @@ import AnalysisDisplay from './AnalysisDisplay';
 
 interface WritingImproverProps {
   onImprovedText?: (improvedText: string) => void;
+  initialText?: string;
   className?: string;
 }
 
-const WritingImprover: React.FC<WritingImproverProps> = ({ onImprovedText, className = '' }) => {
-  const [inputText, setInputText] = useState('');
+const WritingImprover: React.FC<WritingImproverProps> = ({ onImprovedText, initialText = '', className = '' }) => {
+  const [inputText, setInputText] = useState(initialText);
   const [improvementResult, setImprovementResult] = useState<WritingImprovementResponse | null>(null);
   const [suggestionsResult, setSuggestionsResult] = useState<WritingSuggestionsResponse | null>(null);
   const [improvementType, setImprovementType] = useState<'grammar' | 'style' | 'vocabulary' | 'complete'>('complete');
@@ -38,6 +39,13 @@ const WritingImprover: React.FC<WritingImproverProps> = ({ onImprovedText, class
     };
     fetchModels();
   }, []);
+
+  // Update inputText when initialText changes
+  useEffect(() => {
+    if (initialText && inputText === '') {
+      setInputText(initialText);
+    }
+  }, [initialText]);
 
   const handleImprove = async () => {
     if (!inputText.trim()) {
@@ -81,13 +89,34 @@ const WritingImprover: React.FC<WritingImproverProps> = ({ onImprovedText, class
 
     setSuggestionsLoading(true);
     setError(null);
-    setSuggestionsResult(null);
-
-    try {
-      const response = await getWritingSuggestions(inputText, selectedModel);
-      setSuggestionsResult(response);
+    setSuggestionsResult(null);    try {
+      console.log('Getting suggestions with model:', selectedModel);
+      
+      // Make sure model is not undefined
+      if (!selectedModel && models.length > 0) {
+        console.log('No model selected, using first available model');
+        setSelectedModel(models[0]);
+      }
+      
+      const response = await getWritingSuggestions(
+        inputText,
+        selectedModel || (models.length > 0 ? models[0] : undefined)
+      );
+      
+      console.log('Suggestions response:', response);
+      
+      if (!response.suggestions) {
+        console.warn('No suggestions received from API');
+        setError('No suggestions received from API. Please try again.');
+      } else {
+        setSuggestionsResult(response);
+      }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to get suggestions. Please try again.');
+      console.error('Error getting suggestions:', err);
+      console.error('Error response:', err.response);
+      const errorDetail = err.response?.data?.detail || 'Failed to get suggestions. Please try again.';
+      console.error('Error detail:', errorDetail);
+      setError(errorDetail);
     } finally {
       setSuggestionsLoading(false);
     }
@@ -99,7 +128,6 @@ const WritingImprover: React.FC<WritingImproverProps> = ({ onImprovedText, class
       setImprovementResult(null);
     }
   };
-
   // Convert improvement result to analysis format for display
   const getAnalysisFromImprovement = (result: WritingImprovementResponse) => ({
     entry_id: 0,
@@ -115,10 +143,20 @@ const WritingImprover: React.FC<WritingImproverProps> = ({ onImprovedText, class
     entry_id: 0,
     title: 'Writing Suggestions',
     think: result.think,
-    answer: result.suggestions,
+    answer: result.suggestions || 'No suggestions available.',
     raw_content: result.raw_content,
     analysis_type: 'suggestions'
   });
+
+  // Calculate word count
+  const getWordCount = (text: string): number => {
+    return text.trim().split(/\s+/).filter(Boolean).length;
+  };
+
+  // Calculate character count
+  const getCharacterCount = (text: string): number => {
+    return text.length;
+  };
 
   return (
     <div className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 ${className}`}>
@@ -190,10 +228,9 @@ const WritingImprover: React.FC<WritingImproverProps> = ({ onImprovedText, class
             placeholder="Enter your English text here to improve grammar, style, and vocabulary..."
             className="w-full h-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white resize-none"
             maxLength={5000}
-          />
-          <div className="flex justify-between items-center mt-1">
+          />          <div className="flex justify-between items-center mt-1">
             <span className="text-xs text-gray-500 dark:text-gray-400">
-              {inputText.length}/5000 characters
+              {getWordCount(inputText)} words, {getCharacterCount(inputText)}/5000 characters
             </span>
             {inputText.length > 0 && (
               <button
@@ -300,4 +337,4 @@ const WritingImprover: React.FC<WritingImproverProps> = ({ onImprovedText, class
   );
 };
 
-export default WritingImprover; 
+export default WritingImprover;

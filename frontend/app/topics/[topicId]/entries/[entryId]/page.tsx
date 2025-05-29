@@ -11,6 +11,7 @@ import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import mermaid from 'mermaid';
 import 'katex/dist/katex.min.css';
 import EntryAnalysis from '../../../../../components/AI/EntryAnalysis';
+import WritingImprover from '../../../../../components/AI/WritingImprover';
 
 // Initialize mermaid
 if (typeof window !== 'undefined') {
@@ -347,7 +348,31 @@ const EntryDetailPage = () => {
         </div>
         
         <div>          <label htmlFor="content" className="form-label">Content</label>
-              <div style={{minHeight: "70vh"}} className="flex flex-col">
+          
+          {/* AI Writing Assistant */}
+          <details className="mb-4 bg-white dark:bg-gray-750 rounded-lg border border-gray-200 dark:border-gray-700">
+            <summary className="flex items-center px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+              <div className="p-1 mr-2 rounded-full bg-blue-100 dark:bg-blue-900/30">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </div>
+              <span className="font-medium text-gray-900 dark:text-gray-100">AI Writing Assistant</span>
+            </summary>
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                Use AI to improve your writing with grammar corrections, style enhancements, and vocabulary suggestions.
+              </p>
+              <WritingImprover 
+                initialText={content}
+                onImprovedText={(improvedText) => {
+                  setContent(improvedText);
+                }}
+              />
+            </div>
+          </details>
+              
+          <div style={{minHeight: "70vh"}} className="flex flex-col">
             <MarkdownEditor 
               value={content}
               onChange={(value) => setContent(value)}
@@ -553,15 +578,44 @@ const EntryDetailPage = () => {
           </div>
         ) : (
           <p className="text-gray-500 dark:text-gray-400 italic">No content provided.</p>
-        )}      </div>
-      
-      {/* AI Analysis Component */}
+        )}      </div>      {/* AI Analysis Component */}
       {entry && (
         <div className="mt-6 mb-6">
           <EntryAnalysis entryId={entry.entry_id} entryTitle={entry.title} />
         </div>
       )}
       
+      {/* AI Writing Assistant in View Mode */}
+      <details className="mb-4 bg-white dark:bg-gray-750 rounded-lg border border-gray-200 dark:border-gray-700">
+        <summary className="flex items-center px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+          <div className="p-1 mr-2 rounded-full bg-blue-100 dark:bg-blue-900/30">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </div>
+          <span className="font-medium text-gray-900 dark:text-gray-100">AI Writing Assistant</span>
+        </summary>
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Use AI to improve your writing with grammar corrections, style enhancements, and vocabulary suggestions.
+            {isEditing ? " Changes will be applied to your current draft." : " You'll need to switch to edit mode to apply changes."}
+          </p>
+          <WritingImprover 
+            initialText={isEditing ? content : entry.content || ''}
+            onImprovedText={(improvedText) => {
+              if (isEditing) {
+                setContent(improvedText);
+              } else {
+                // If not in editing mode, prompt user to enter edit mode
+                if (confirm("To apply these changes, you need to switch to edit mode. Switch now?")) {
+                  setContent(improvedText);
+                  setIsEditing(true);
+                }
+              }
+            }} 
+          />
+        </div>
+      </details>
       <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Entry Details</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6 text-sm">

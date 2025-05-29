@@ -12,22 +12,34 @@ interface AnalysisDisplayProps {
 const AnalysisDisplay: React.FC<AnalysisDisplayProps> = ({ analysis, className = '' }) => {
   const [showThinking, setShowThinking] = useState(false);
 
+  // Debug log
+  console.log('AnalysisDisplay received analysis:', analysis);
+
   const getAnalysisTypeLabel = (type: string) => {
     const labels = {
       general: 'General Analysis',
       mood: 'Mood Analysis',
       summary: 'Summary',
-      insights: 'Insights'
+      insights: 'Insights',
+      grammar: 'Grammar Improvement',
+      style: 'Style Improvement',
+      vocabulary: 'Vocabulary Improvement',
+      complete: 'Complete Improvement',
+      suggestions: 'Writing Suggestions'
     };
     return labels[type as keyof typeof labels] || 'Analysis';
   };
-
   const getAnalysisTypeColor = (type: string) => {
     const colors = {
       general: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
       mood: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
       summary: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-      insights: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400'
+      insights: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+      grammar: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400',
+      style: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400',
+      vocabulary: 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-400',
+      complete: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+      suggestions: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
     };
     return colors[type as keyof typeof colors] || 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400';
   };

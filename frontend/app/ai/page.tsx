@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../../context/AuthContext';
 import AIStatus from '../../components/AI/AIStatus';
 import PromptGenerator from '../../components/AI/PromptGenerator';
-import WritingImprover from '../../components/AI/WritingImprover';
 import { getAvailableModels, checkAIStatus } from '../../lib/ai-utils';
 import api from '../../lib/api';
 
@@ -172,16 +171,7 @@ const AIPage: React.FC = () => {
               <li>Refresh this page to use AI features</li>
             </ol>
           </div>
-        </div>
-      </div>
-
-      {/* Writing Improvement Section */}
-      <div className="mt-8">
-        <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">
-          English Writing Assistant
-        </h2>
-        <WritingImprover />
-      </div>
+        </div>      </div>
 
       <div className="mt-8">
         <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">
