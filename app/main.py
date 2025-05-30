@@ -10,7 +10,11 @@ import os
 
 from .database import engine, Base
 from . import models
+<<<<<<< HEAD
 from .api import users, topics, entries, files, links, tags, auth, gallery, ai
+=======
+from .api import users, topics, entries, files, links, tags, auth, gallery
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
 
 # Tạo thư mục uploads nếu chưa tồn tại
 uploads_dir = "uploads"
@@ -143,13 +147,20 @@ async def debug_routes():
 # IMPORTANT: Include API routers with explicit prefixes
 app.include_router(auth.router)
 app.include_router(users.router, prefix="/users")  # Add explicit prefix
+<<<<<<< HEAD
 app.include_router(topics.router, prefix="/topics")  # Add the prefix here
+=======
+app.include_router(topics.router, prefix="/topics")  # Add explicit prefix
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
 app.include_router(entries.router, prefix="/entries")  # Ensure this line exists
 app.include_router(files.router, prefix="/files")  # Add explicit prefix
 app.include_router(links.router, prefix="/links")  # Add explicit prefix
 app.include_router(tags.router, prefix="/tags")  # Add explicit prefix
 app.include_router(gallery.router, prefix="/gallery")  # Gallery router
+<<<<<<< HEAD
 app.include_router(ai.router, prefix="/ai")  # AI functionality
+=======
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
 
 # Add global exception handler
 @app.exception_handler(Exception)

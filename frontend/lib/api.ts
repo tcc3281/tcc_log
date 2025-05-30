@@ -1,10 +1,13 @@
 import axios, { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 
+<<<<<<< HEAD
 // Extend the AxiosRequestConfig type to include retryCount
 interface CustomRequestConfig extends InternalAxiosRequestConfig {
   retryCount?: number;
 }
 
+=======
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
 // Determine correct API URL based on environment
 // Use NEXT_SERVER_API_URL for server-side requests and NEXT_PUBLIC_API_URL for client-side requests
 export const isServer = typeof window === 'undefined';
@@ -63,6 +66,7 @@ export const uploadFile = async (file: File, entryId: number): Promise<string> =
     throw error;
   }
 };
+<<<<<<< HEAD
 
 // Add retry functionality to axios
 const MAX_RETRIES = 3;
@@ -95,6 +99,36 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return Promise.reject(error);
 });
 
+=======
+
+// Add request interceptor for better debugging and token handling
+api.interceptors.request.use((config) => {
+  // Enhanced logging for debugging - log full request details
+  console.log(`Request: ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`, 
+    config.headers ? `Headers: ${JSON.stringify(config.headers)}` : '');
+  
+  // Get token from localStorage if it exists and not already set in headers
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('token');
+    if (token && !config.headers.Authorization) {
+      // Make sure to include the 'Bearer ' prefix
+      config.headers.Authorization = `Bearer ${token}`;
+      
+      // Log with partial token for debugging (hide most of the token)
+      const tokenPreview = token.length > 20 
+        ? `${token.substring(0, 10)}...${token.substring(token.length - 5)}`
+        : token.substring(0, 15) + '...';
+      console.log(`Added token to request: Bearer ${tokenPreview}`);
+    }
+  }
+  
+  return config;
+}, (error) => {
+  console.error('Request error:', error);
+  return Promise.reject(error);
+});
+
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
 // Add response interceptor for better debugging and token handling
 api.interceptors.response.use((response) => {
   console.log(`Response from ${response.config.url}: Status ${response.status}`);
@@ -139,8 +173,13 @@ api.interceptors.response.use((response) => {
       console.log('Authentication error - handling credentials');
       
       // Don't clear credentials or redirect while trying to validate the token in AuthContext
+<<<<<<< HEAD
       const isValidatingToken = config.url.endsWith('/users/me') && 
                                config.method === 'get' && 
+=======
+      const isValidatingToken = error.config.url.endsWith('/users/me') && 
+                               error.config.method === 'get' && 
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
                                localStorage.getItem('token');
                                
       // Don't redirect or clear on login/register pages or when validating token
@@ -178,6 +217,7 @@ api.interceptors.response.use((response) => {
     // Handle server errors (500)
     else if (error.response.status >= 500) {
       console.error('Server error:', error.response.data);
+<<<<<<< HEAD
     }  } else if (error.request) {
     // No response received - likely a network error
     console.error('No response received (network error):', error.request);
@@ -195,6 +235,11 @@ api.interceptors.response.use((response) => {
         retryCount: config?._retryCount
       });
     }
+=======
+    }
+  } else if (error.request) {
+    console.error('No response received:', error.request);
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
   } else {
     console.error('Error setting up request:', error.message);
   }

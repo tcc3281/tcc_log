@@ -39,6 +39,7 @@ const LoginPage = () => {
       return;
     }
     
+<<<<<<< HEAD
     // Display the API URL we're going to use
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
     console.log(`Attempting to login using API URL: ${apiUrl}`);
@@ -63,6 +64,10 @@ const LoginPage = () => {
         console.warn("API connectivity check failed:", networkErr);
         // Continue anyway, the actual login will have retry logic
       }
+=======
+    try {
+      setIsSubmitting(true);
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
       
       // Sử dụng hàm tiện ích để đăng nhập
       const { user: userData, token } = await loginUser(username, password);
@@ -76,8 +81,11 @@ const LoginPage = () => {
       console.error('Login error:', err);
       if (err.response?.data?.detail) {
         setError(err.response.data.detail);
+<<<<<<< HEAD
       } else if (err.message === 'Network Error' || err.name === 'TypeError') {
         setError('Unable to connect to the server. Please check your internet connection or try again later.');
+=======
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
       } else {
         setError('Invalid username or password. Please try again.');
       }

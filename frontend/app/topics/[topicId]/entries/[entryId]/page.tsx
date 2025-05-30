@@ -10,8 +10,11 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import mermaid from 'mermaid';
 import 'katex/dist/katex.min.css';
+<<<<<<< HEAD
 import EntryAnalysis from '../../../../../components/AI/EntryAnalysis';
 import WritingImprover from '../../../../../components/AI/WritingImprover';
+=======
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
 
 // Initialize mermaid
 if (typeof window !== 'undefined') {
@@ -348,6 +351,7 @@ const EntryDetailPage = () => {
         </div>
         
         <div>          <label htmlFor="content" className="form-label">Content</label>
+<<<<<<< HEAD
           
           {/* AI Writing Assistant */}
           <details className="mb-4 bg-white dark:bg-gray-750 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -373,6 +377,9 @@ const EntryDetailPage = () => {
           </details>
               
           <div style={{minHeight: "70vh"}} className="flex flex-col">
+=======
+              <div style={{minHeight: "70vh"}} className="flex flex-col">
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
             <MarkdownEditor 
               value={content}
               onChange={(value) => setContent(value)}
@@ -578,6 +585,7 @@ const EntryDetailPage = () => {
           </div>
         ) : (
           <p className="text-gray-500 dark:text-gray-400 italic">No content provided.</p>
+<<<<<<< HEAD
         )}      </div>      {/* AI Analysis Component */}
       {entry && (
         <div className="mt-6 mb-6">
@@ -616,6 +624,11 @@ const EntryDetailPage = () => {
           />
         </div>
       </details>
+=======
+        )}
+      </div>
+      
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
       <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Entry Details</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6 text-sm">

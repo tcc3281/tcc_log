@@ -4,7 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { getFileUrl } from "../lib/file-utils";
+<<<<<<< HEAD
 import AIStatus from "./AI/AIStatus";
+=======
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
 
 export default function Header() {
   const { user, logout, isLoading } = useAuth();
@@ -38,8 +41,13 @@ export default function Header() {
               <span className="text-sm hidden sm:inline text-gray-600 dark:text-gray-300">
                 Welcome, <strong className="font-medium">{user.username}</strong>
               </span>
+<<<<<<< HEAD
             </div>            <nav className="flex items-center gap-4">
               <Link 
+=======
+            </div>
+            <nav className="flex items-center gap-4"><Link 
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
                 href="/topics" 
                 className="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
               >
@@ -50,6 +58,7 @@ export default function Header() {
                 className="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
               >
                 Gallery
+<<<<<<< HEAD
               </Link>              <Link 
                 href="/ai" 
                 className="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center"
@@ -62,6 +71,9 @@ export default function Header() {
               <div className="ml-2">
                 <AIStatus />
               </div>
+=======
+              </Link>
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
               <Link 
                 href="/profile" 
                 className="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"

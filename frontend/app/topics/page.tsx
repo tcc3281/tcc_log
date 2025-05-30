@@ -23,11 +23,16 @@ const TopicsPage = () => {
   const [updatedTopicName, setUpdatedTopicName] = useState('');
   const [updatedDescription, setUpdatedDescription] = useState('');
   const router = useRouter();
+<<<<<<< HEAD
+=======
+
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
   useEffect(() => {
     if (!user) return;
 
     const fetchTopics = async () => {
       try {
+<<<<<<< HEAD
         console.log('Fetching topics with authentication...');
         // Make sure the token is included in the request header
         const token = localStorage.getItem('token');
@@ -35,6 +40,9 @@ const TopicsPage = () => {
         
         // First try to access with authentication
         const res = await api.get('/topics', { headers });
+=======
+        const res = await api.get('/topics');
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
         setTopics(res.data);
         console.log('Topics fetched successfully:', res.data);
       } catch (err) {

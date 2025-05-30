@@ -26,6 +26,7 @@ export const getFileUrl = (path: string): string => {
   if (path.startsWith('http')) {
     return path;
   }
+<<<<<<< HEAD
     // Handle uploads directory
   if (path.includes('/uploads/')) {
     // Parse the path to extract the correct parts
@@ -54,6 +55,23 @@ export const getFileUrl = (path: string): string => {
     const isDocker = typeof window !== 'undefined' && window.location.hostname === 'localhost';
     const finalUrl = isDocker ? publicUrl : apiUrlPath;
     console.log('getFileUrl: using uploads url', { path, finalUrl, relativePath });
+=======
+  
+  // Handle uploads directory
+  if (path.includes('/uploads/')) {
+    // Extract just the filename part
+    const filename = path.split('/').pop();
+    
+    // First try accessing the file directly from the public folder
+    const publicUrl = `/uploads/${filename}`;
+    
+    // Fallback to the API route
+    const apiUrlPath = `${apiUrl}/uploads/${filename}`;
+    
+    // In production, try to use the public URL first
+    const finalUrl = process.env.NODE_ENV === 'production' ? publicUrl : apiUrlPath;
+    console.log('getFileUrl: using uploads url', { path, finalUrl });
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
     return finalUrl;
   }
   

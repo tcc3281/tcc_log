@@ -30,6 +30,7 @@ export async function GET(
     if (!filename.startsWith('profiles/')) {
       return new NextResponse('Not found', { status: 404 });
     }
+<<<<<<< HEAD
       // Construct the full file path - look in public/uploads when in Docker
     // or try the parent directory (../uploads) as fallback for development
     let filePath = path.join(process.cwd(), 'public', 'uploads', filename);
@@ -44,6 +45,16 @@ export async function GET(
         console.error(`File not found: ${filePath} or ${altPath}`);
         return new NextResponse('Not found', { status: 404 });
       }
+=======
+    
+    // Construct the full file path
+    const filePath = path.join(process.cwd(), '..', 'uploads', filename);
+    
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      console.error(`File not found: ${filePath}`);
+      return new NextResponse('Not found', { status: 404 });
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
     }
     
     // Read file
