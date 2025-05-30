@@ -1,6 +1,6 @@
-import axios from 'axios';
+import api from './api';
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+// We'll use the standardized API instance from api.ts
 
 // Parse JWT token manually
 function parseJwt(token: string) {
@@ -29,28 +29,18 @@ function parseJwt(token: string) {
 }
 
 // Helper function để test token và endpoint
-async function debugFetch(url: string, token: string) {
+async function debugFetch(path: string, token: string) {
   const headers = { 'Authorization': `Bearer ${token}` };
-  console.log(`Debug fetch to ${url} with headers:`, headers);
+  console.log(`Debug fetch to ${path} with headers:`, headers);
   
   try {
-    const response = await fetch(url, {
-      method: 'GET',
+    const response = await api.get(path, {
       headers: headers
     });
     
-    const responseText = await response.text();
     console.log(`Response status: ${response.status}`);
-    
-    // Try to parse as JSON if possible
-    try {
-      const jsonData = JSON.parse(responseText);
-      console.log('Response data:', jsonData);
-      return jsonData;
-    } catch (e) {
-      console.log('Raw response:', responseText);
-      return responseText;
-    }
+    console.log('Response data:', response.data);
+    return response.data;
   } catch (err) {
     console.error('Debug fetch error:', err);
     throw err;
@@ -69,22 +59,14 @@ export async function getAuthToken(username: string, password: string) {
     
     console.log(`Authenticating user: ${username}`);
     
-    // Gọi API để lấy token
-    const response = await fetch(`${apiUrl}/auth/token`, {
-      method: 'POST',
+    // Gọi API để lấy token using the api instance
+    const response = await api.post('/auth/token', params, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: params.toString()
+      }
     });
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Authentication error:', response.status, errorText);
-      throw new Error(`Authentication failed: ${response.status} ${response.statusText}`);
-    }
-    
-    const data = await response.json();
+    const data = response.data;
     
     if (!data || !data.access_token) {
       throw new Error('Token không hợp lệ từ phản hồi API');
@@ -111,20 +93,14 @@ export async function getUserInfo(token: string) {
     console.log('Getting user info with token...');
     
     // Sử dụng endpoint /auth/me thay vì /users để lấy thông tin user hiện tại
-    const userResponse = await fetch(`${apiUrl}/auth/me`, {
+    const userResponse = await api.get('/auth/me', {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       }
     });
     
-    if (!userResponse.ok) {
-      const errorText = await userResponse.text();
-      console.error('Error getting user info:', userResponse.status, errorText);
-      throw new Error(`Failed to get user info: ${userResponse.status} ${userResponse.statusText}`);
-    }
-    
-    const user = await userResponse.json();
+    const user = userResponse.data;
     console.log('User info retrieved:', user);
     
     return user;
@@ -141,26 +117,13 @@ export async function registerUser(username: string, email: string, password: st
   try {
     console.log(`Registering new user: ${username}, ${email}`);
     
-    const response = await fetch(`${apiUrl}/users`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        username,
-        email,
-        password
-      })
+    const response = await api.post('/users', {
+      username,
+      email,
+      password
     });
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Registration error:', response.status, errorText);
-      throw new Error(`Registration failed: ${response.status} ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    return data;
+    return response.data;
   } catch (error) {
     console.error('Lỗi đăng ký người dùng:', error);
     throw error;
