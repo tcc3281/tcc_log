@@ -214,8 +214,10 @@ export async function getWritingSuggestions(
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
-  timestamp?: Date;
   think?: string; // Add think field for AI responses
+  timestamp?: Date;
+  inference_time?: number; // Add inference time in milliseconds
+  tokens_per_second?: number; // Add token generation speed
 }
 
 /**
@@ -226,15 +228,19 @@ export interface ChatResponse {
   model?: string;
   usage?: Record<string, number>;
   error?: boolean;
+  inference_time?: number; // Add inference time in milliseconds
+  tokens_per_second?: number; // Add token generation speed
 }
 
 /**
  * Streaming chat data structure
  */
 export interface ChatStreamData {
-  type: 'chunk' | 'thinking' | 'answer' | 'done' | 'error';
+  type: 'chunk' | 'thinking' | 'answer' | 'done' | 'error' | 'stats';
   content: string;
   chunk_id?: number;
+  inference_time?: number;
+  tokens_per_second?: number;
 }
 
 /**
@@ -250,7 +256,8 @@ export async function sendChatMessageStream(
   history: { role: string; content: string }[] = [], // Change type to match API
   model?: string,
   systemPrompt?: string,
-  onEvent?: StreamEventHandler
+  onEvent?: StreamEventHandler,
+  signal?: AbortSignal
 ): Promise<{ thinking: string; answer: string; fullContent: string }> {
   try {
     // Get the token from localStorage (same key as api.ts uses)
@@ -277,7 +284,8 @@ export async function sendChatMessageStream(
         model,
         system_prompt: systemPrompt,
         stream: true
-      })
+      }),
+      signal // Add the AbortSignal to allow request cancellation
     });
 
     if (!response.ok) {
