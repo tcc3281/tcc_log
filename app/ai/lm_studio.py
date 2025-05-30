@@ -1,12 +1,13 @@
 import os
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 import httpx
 import json
 import re
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import asyncio
+from openai import AsyncOpenAI
 
 # Load environment variables
 load_dotenv()
@@ -17,13 +18,19 @@ logger = logging.getLogger(__name__)
 
 # Default configuration
 DEFAULT_LM_STUDIO_BASE_URL = "http://127.0.0.1:1234/v1"
-DEFAULT_AI_MODEL = "your-model-identifier"  # Placeholder, will be replaced from env or user input
+DEFAULT_AI_MODEL = "lmstudio-community/Qwen2.5-7B-Instruct-GGUF"  # Default model ID
 DEFAULT_MAX_TOKENS = 1000
 DEFAULT_TEMPERATURE = 0.7
 
 # Load from environment variables or use defaults
 LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", DEFAULT_LM_STUDIO_BASE_URL)
 AI_MODEL = os.getenv("LM_STUDIO_MODEL", DEFAULT_AI_MODEL)
+
+# Initialize OpenAI client for LM Studio
+openai_client = AsyncOpenAI(
+    base_url=LM_STUDIO_BASE_URL,
+    api_key="not-needed"  # LM Studio doesn't require an API key
+)
 
 
 class AIMessage(BaseModel):
@@ -45,7 +52,7 @@ class AIResponse(BaseModel):
     """Structure for AI response"""
     content: str
     model: str
-    usage: Optional[Dict[str, int]] = None
+    usage: Optional[Dict[str, Optional[int]]] = None
     tokens_per_second: Optional[float] = None
     time_to_first_token: Optional[float] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
@@ -68,6 +75,9 @@ def parse_ai_response(content: str) -> ParsedAIResponse:
     Returns:
         ParsedAIResponse: Structured response with think and answer sections
     """
+    # Log the raw content for debugging
+    logger.debug(f"Parsing AI response - raw content sample: {content[:200]}...")
+    
     # Pattern to match <think>...</think> sections
     think_pattern = r'<think>\s*(.*?)\s*</think>'
     
@@ -76,17 +86,25 @@ def parse_ai_response(content: str) -> ParsedAIResponse:
     
     if think_match:
         think_content = think_match.group(1).strip()
+        logger.debug(f"Found think section: {think_content[:50]}...")
         # Remove the think section from the content to get the answer
         answer_content = re.sub(think_pattern, '', content, flags=re.DOTALL | re.IGNORECASE).strip()
     else:
+        logger.debug("No think section found in response")
         think_content = None
         answer_content = content.strip()
     
-    return ParsedAIResponse(
+    # Create response object
+    parsed_response = ParsedAIResponse(
         think=think_content,
         answer=answer_content,
         raw_content=content
     )
+    
+    # Log for debugging
+    logger.debug(f"Parsed AI response - has think: {think_content is not None}, answer length: {len(answer_content)}")
+    
+    return parsed_response
 
 
 async def query_lm_studio(request: AIRequest, max_retries: int = 3) -> AIResponse:
@@ -129,20 +147,55 @@ async def analyze_journal_entry(
         
     Returns:
         Dict: Analysis result with think, answer, and raw content
-    """
-    # Define system prompts based on analysis type
+    """    # Define system prompts based on analysis type
     system_prompts = {
         "general": """Analyze this journal entry briefly. Focus on key themes and main points.
-                     Keep your response under 200 words.""",
+                     Keep your response under 200 words.
+                     
+                     First, put your analytical thinking inside <think> tags. Then provide your final answer separately.
+                     Example: 
+                     <think>
+                     Here I analyze the key themes...
+                     </think>
+                     
+                     My analysis of your journal entry:
+                     [Your final response]""",
                       
         "mood": """Analyze the writer's mood and emotional state in 3-5 sentences.
-                   Focus only on emotions and mood.""",
+                   Focus only on emotions and mood.
+                   
+                   First, put your analytical thinking inside <think> tags. Then provide your final answer separately.
+                   Example: 
+                   <think>
+                   Here I analyze the emotions...
+                   </think>
+                   
+                   Mood analysis:
+                   [Your final response]""",
                    
         "summary": """Summarize the main points in 3-4 sentences.
-                     Focus on key events and emotions only.""",
+                     Focus on key events and emotions only.
+                     
+                     First, put your analytical thinking inside <think> tags. Then provide your final answer separately.
+                     Example: 
+                     <think>
+                     Here I identify the key points...
+                     </think>
+                     
+                     Summary:
+                     [Your final response]""",
                       
         "insights": """Provide 2-3 key insights about the writer's thoughts or patterns.
-                      Keep it brief and focused."""
+                      Keep it brief and focused.
+                      
+                      First, put your analytical thinking inside <think> tags. Then provide your final answer separately.
+                      Example: 
+                      <think>
+                      Here I analyze patterns...
+                      </think>
+                      
+                      Key insights:
+                      [Your final response]"""
     }
     
     # Define max tokens for each analysis type
@@ -478,7 +531,7 @@ async def check_ai_service() -> Dict[str, Any]:
 
 async def _query_lm_studio_internal(request: AIRequest) -> AIResponse:
     """
-    Internal function to send a request to LM Studio API with streaming support
+    Internal function to send a request to LM Studio API using OpenAI client with streaming support
     """
     model = request.model or AI_MODEL
     temperature = request.temperature or DEFAULT_TEMPERATURE
@@ -506,94 +559,69 @@ async def _query_lm_studio_internal(request: AIRequest) -> AIResponse:
     logger.info(f"Querying LM Studio with model: {model}")
     logger.debug(f"Request parameters: temp={temperature}, max_tokens={max_tokens}")
     logger.debug(f"Message count: {len(request.messages)}")
-    
-    # Prepare request payload
-    payload = {
-        "model": model,
-        "messages": [{"role": msg.role, "content": msg.content} for msg in request.messages],
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "stream": True  # Enable streaming for longer responses
-    }
-    
-    # Add tools if provided
-    if request.tools:
-        payload["tools"] = request.tools
+      # Prepare messages in OpenAI format
+    messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
     
     try:
-        # Use httpx for async HTTP requests with increased timeout
-        async with httpx.AsyncClient(timeout=300.0) as client:  # 5 minutes timeout
-            # Call the chat completions endpoint with streaming
-            async with client.stream(
-                "POST",
-                f"{LM_STUDIO_BASE_URL}/chat/completions",
-                json=payload,
-                headers={"Content-Type": "application/json"}
-            ) as response:
-                # Raise exception for error status codes
-                response.raise_for_status()
+        # Use OpenAI client to stream the response
+        stream = await openai_client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+            tools=request.tools
+        )
+        
+        # Initialize variables for collecting streamed response
+        full_content = ""
+        model_name = model
+        usage_info = None
+          # Process the stream chunks
+        async for chunk in stream:
+            if hasattr(chunk, 'choices') and chunk.choices:
+                choice = chunk.choices[0]
+                if hasattr(choice, 'delta') and hasattr(choice.delta, 'content') and choice.delta.content is not None:
+                    content = choice.delta.content
+                    full_content += content
+                    # Log only snippets of content for debugging
+                    if len(content) > 50:
+                        logger.debug(f"Received content chunk: {content[:50]}...")
+                    else:
+                        logger.debug(f"Received content chunk: {content}")
                 
-                # Initialize variables for collecting streamed response
-                full_content = ""
-                model_name = model
-                usage_info = None
+                # Store model name if available
+                if hasattr(chunk, 'model'):
+                    model_name = chunk.model
                 
-                # Process the stream
-                async for line in response.aiter_lines():
-                    if line.strip():
-                        try:
-                            # Remove "data: " prefix if present
-                            if line.startswith("data: "):
-                                line = line[6:]
-                            
-                            # Skip [DONE] message
-                            if line.strip() == "[DONE]":
-                                continue
-                                
-                            # Parse the JSON data
-                            try:
-                                chunk_data = json.loads(line)
-                                
-                                # Extract content from the chunk
-                                if "choices" in chunk_data and chunk_data["choices"]:
-                                    choice = chunk_data["choices"][0]
-                                    if "delta" in choice and "content" in choice["delta"]:
-                                        content = choice["delta"]["content"]
-                                        full_content += content
-                                        logger.debug(f"Received content chunk: {content}")
-                                    
-                                    # Update model name if available
-                                    if "model" in chunk_data:
-                                        model_name = chunk_data["model"]
-                                    
-                                    # Update usage information if available
-                                    if "usage" in chunk_data:
-                                        usage_info = chunk_data["usage"]
-                                        
-                            except json.JSONDecodeError as je:
-                                logger.warning(f"Invalid JSON in chunk: {line}")
-                                continue
-                                
-                        except Exception as e:
-                            logger.warning(f"Error processing chunk: {e}")
-                            continue
-                
-                logger.info(f"Completed streaming. Total content length: {len(full_content)}")
-                
-                if not full_content:
-                    raise ValueError("No content received from the stream")
-                
-                # Create response object with collected data
-                ai_response = AIResponse(
-                    content=full_content,
-                    model=model_name,
-                    usage=usage_info,
-                    tokens_per_second=None,  # Not available in streaming mode
-                    time_to_first_token=None,  # Not available in streaming mode
-                    tool_calls=None  # Tool calls not supported in streaming mode
-                )
-                
-                return ai_response
+                # Store usage info if available  
+                if hasattr(chunk, 'usage'):
+                    usage_info = {
+                        'prompt_tokens': getattr(chunk.usage, 'prompt_tokens', None),
+                        'completion_tokens': getattr(chunk.usage, 'completion_tokens', None),
+                        'total_tokens': getattr(chunk.usage, 'total_tokens', None)
+                    }        
+        logger.info(f"Completed streaming. Total content length: {len(full_content)}")
+        if not full_content:
+            raise ValueError("No content received from the stream")
+        
+        # Trim any whitespace from the full content
+        full_content = full_content.strip()
+        
+        # Log a sample of the final content for debugging
+        content_sample = full_content[:100] + "..." if len(full_content) > 100 else full_content
+        logger.debug(f"Final content sample: {content_sample}")
+            
+        # Create response object with collected data
+        ai_response = AIResponse(
+            content=full_content,
+            model=model_name,
+            usage=usage_info,
+            tokens_per_second=None,  # Not available in streaming mode
+            time_to_first_token=None,  # Not available in streaming mode
+            tool_calls=None  # Tool calls not supported in streaming mode
+        )
+        return ai_response
                 
     except httpx.HTTPStatusError as e:
         logger.error(f"HTTP error when querying LM Studio API: {e}")
