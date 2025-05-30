@@ -6,6 +6,7 @@ import time
 
 from .. import crud, schemas
 from ..database import get_db
+from .auth import get_current_active_user
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -73,9 +74,14 @@ async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         raise
 
 @router.get("/", response_model=List[schemas.User])
-async def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Get a list of users"""
-    logger.debug(f"Fetching users with skip={skip}, limit={limit}")
+async def read_users(
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db),
+    current_user: schemas.User = Depends(get_current_active_user)
+):
+    """Get a list of users (requires authentication)"""
+    logger.debug(f"Fetching users with skip={skip}, limit={limit} for user: {current_user.username}")
     users = crud.get_users(db, skip=skip, limit=limit)
     return users
 

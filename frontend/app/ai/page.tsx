@@ -60,12 +60,13 @@ const AIPage: React.FC = () => {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
-  }, [input]);
-  const handleSendMessage = async () => {
+  }, [input]);  const handleSendMessage = async () => {
     if (!input.trim()) return;
     
+    const currentInput = input.trim();
+    
     // Add user message to chat
-    const userMessage: ChatMessage = { role: 'user', content: input, timestamp: new Date() };
+    const userMessage: ChatMessage = { role: 'user', content: currentInput, timestamp: new Date() };
     setMessages(prevMessages => [...prevMessages, userMessage]);
     
     // Clear input
@@ -91,15 +92,28 @@ const AIPage: React.FC = () => {
       
       setMessages(prevMessages => [...prevMessages, initialAiMessage]);
       
-      // Filter out system welcome message for the API call
-      const historyForApi = messages.filter(m => m.role !== 'system');
+      // Prepare conversation history INCLUDING the user message we just added
+      // Get all messages except system messages, and include the current user message
+      const allMessages = [...messages, userMessage].filter(m => m.role !== 'system');
+      
+      // Convert to API format and exclude the current message (last one) from history
+      const historyForApi = allMessages.slice(0, -1).map(msg => ({
+        role: msg.role,
+        content: msg.content || ''
+      }));
+      
+      console.log('Sending to AI:', { 
+        currentMessage: currentInput, 
+        historyLength: historyForApi.length,
+        history: historyForApi 
+      });
       
       let thinkingContent = '';
       let answerContent = '';
       
       // Stream the response
       await sendChatMessageStream(
-        input,
+        currentInput,
         historyForApi,
         selectedModel,
         undefined,
