@@ -347,7 +347,9 @@ async def chat_with_ai_stream(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Message must be less than 2000 characters"
-            )        # Prepare message history
+            )
+            
+        # Prepare message history
         history = []
         if request.history:
             history = [
@@ -362,6 +364,8 @@ async def chat_with_ai_stream(
                 answer_content = ""
                 current_section = "answer"  # "thinking" or "answer"
                 in_think_tags = False
+                sent_data = []  # Track data sent to client for later reference
+                content_buffer = ""  # Buffer to detect and remove stats from content
                 
                 async for chunk in lm_studio.chat_with_ai_stream(
                     message=request.message,
@@ -370,7 +374,74 @@ async def chat_with_ai_stream(
                     system_prompt=request.system_prompt
                 ):
                     chunk_id += 1
+                    
+                    # Check if the chunk is a stats message (JSON string)
+                    if isinstance(chunk, str) and chunk.startswith('{"type":'):
+                        try:
+                            # Parse the JSON stats and forward them to the client
+                            stats_data = json.loads(chunk)
+                            # Add the chunk_id for consistency
+                            stats_data["chunk_id"] = chunk_id
+                            sent_data.append(stats_data)  # Store for later reference
+                            yield f"data: {json.dumps(stats_data)}\n\n"
+                            continue  # Skip the rest of the processing for this chunk
+                        except json.JSONDecodeError:
+                            # If it's not valid JSON, treat it as regular content
+                            pass
+                    
+                    # Process regular content
                     content = chunk  # chunk is already a string from chat_with_ai_stream
+                    
+                    # Check if the content contains a stats JSON object at the end
+                    stats_index = content.find('{"type":"stats"')
+                    if stats_index != -1:
+                        # Extract the stats portion
+                        stats_part = content[stats_index:]
+                        # Keep only the content portion
+                        content = content[:stats_index]
+                        
+                        try:
+                            # Parse the stats JSON
+                            stats_data = json.loads(stats_part)
+                            # Add the chunk_id for consistency
+                            stats_data["chunk_id"] = chunk_id
+                            sent_data.append(stats_data)  # Store for later reference
+                            # Send the stats separately
+                            yield f"data: {json.dumps(stats_data)}\n\n"
+                        except json.JSONDecodeError:
+                            # If it's not valid JSON, just ignore
+                            pass
+                    
+                    # Add to buffer to check for stats that might be split across chunks
+                    content_buffer += content
+                    # Check if the buffer now contains stats
+                    stats_index = content_buffer.find('{"type":"stats"')
+                    if stats_index != -1:
+                        # Use regex to find the complete JSON object
+                        import re
+                        stats_match = re.search(r'(\{"type":"stats".*?\})', content_buffer[stats_index:])
+                        if stats_match:
+                            stats_str = stats_match.group(1)
+                            try:
+                                # Parse the stats JSON
+                                stats_data = json.loads(stats_str)
+                                # Add the chunk_id for consistency
+                                stats_data["chunk_id"] = chunk_id
+                                sent_data.append(stats_data)  # Store for later reference
+                                
+                                # Remove the stats from the buffer
+                                content_buffer = content_buffer[:stats_index] + content_buffer[stats_index + len(stats_str):]
+                                
+                                # Send the stats separately
+                                yield f"data: {json.dumps(stats_data)}\n\n"
+                                
+                                # Update content to be the cleaned buffer
+                                content = content_buffer
+                                # Clear buffer after processing
+                                content_buffer = ""
+                            except json.JSONDecodeError:
+                                # If it's not valid JSON, keep processing
+                                pass
                     
                     # Parse thinking tags
                     if "<think>" in content and not in_think_tags:
@@ -385,6 +456,7 @@ async def chat_with_ai_stream(
                                 "content": before_think,
                                 "chunk_id": chunk_id
                             }
+                            sent_data.append(data)
                             yield f"data: {json.dumps(data)}\n\n"
                         
                         # Start thinking section
@@ -398,6 +470,7 @@ async def chat_with_ai_stream(
                                 "content": think_content,
                                 "chunk_id": chunk_id
                             }
+                            sent_data.append(data)
                             yield f"data: {json.dumps(data)}\n\n"
                             
                             # Continue with answer after </think>
@@ -409,6 +482,7 @@ async def chat_with_ai_stream(
                                     "content": after_think,
                                     "chunk_id": chunk_id
                                 }
+                                sent_data.append(data)
                                 yield f"data: {json.dumps(data)}\n\n"
                             in_think_tags = False
                             current_section = "answer"
@@ -420,6 +494,7 @@ async def chat_with_ai_stream(
                                 "content": thinking_part,
                                 "chunk_id": chunk_id
                             }
+                            sent_data.append(data)
                             yield f"data: {json.dumps(data)}\n\n"
                     elif "</think>" in content and in_think_tags:
                         # End of thinking section
@@ -430,6 +505,7 @@ async def chat_with_ai_stream(
                             "content": think_part,
                             "chunk_id": chunk_id
                         }
+                        sent_data.append(data)
                         yield f"data: {json.dumps(data)}\n\n"
                         
                         # Continue with answer
@@ -441,6 +517,7 @@ async def chat_with_ai_stream(
                                 "content": after_think,
                                 "chunk_id": chunk_id
                             }
+                            sent_data.append(data)
                             yield f"data: {json.dumps(data)}\n\n"
                         in_think_tags = False
                         current_section = "answer"
@@ -452,6 +529,7 @@ async def chat_with_ai_stream(
                             "content": content,
                             "chunk_id": chunk_id
                         }
+                        sent_data.append(data)
                         yield f"data: {json.dumps(data)}\n\n"
                     else:
                         # Regular answer content
@@ -461,13 +539,26 @@ async def chat_with_ai_stream(
                             "content": content,
                             "chunk_id": chunk_id
                         }
+                        sent_data.append(data)
                         yield f"data: {json.dumps(data)}\n\n"
                 
-                # Send completion signal
+                # Send completion signal with any stats collected
+                inference_time = None
+                tokens_per_second = None
+                
+                # Check if we have any stats data to include with the "done" event
+                for chunk_data in reversed(sent_data):
+                    if chunk_data.get("type") == "stats":
+                        inference_time = chunk_data.get("inference_time")
+                        tokens_per_second = chunk_data.get("tokens_per_second")
+                        break
+                
                 data = {
                     "type": "done",
                     "content": "",
-                    "chunk_id": chunk_id + 1
+                    "chunk_id": chunk_id + 1,
+                    "inference_time": inference_time,
+                    "tokens_per_second": tokens_per_second
                 }
                 yield f"data: {json.dumps(data)}\n\n"
                 

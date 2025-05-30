@@ -2,7 +2,30 @@
 
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { Components } from 'react-markdown';
 import { ChatMessage } from '../../lib/ai-utils';
+import remarkGfm from 'remark-gfm';
+import { 
+  UserCircleIcon, 
+  ComputerDesktopIcon, 
+  ClockIcon, 
+  BoltIcon, 
+  ChevronDownIcon, 
+  ChevronUpIcon, 
+  ClipboardIcon, 
+  CheckIcon 
+} from '@heroicons/react/24/solid';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+// Use esm version to avoid TypeScript errors
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+
+// Define our own interface for code component props that works with ReactMarkdown
+interface CodeComponentProps {
+  className?: string;
+  children?: React.ReactNode;
+  node?: any;
+  [key: string]: any;
+}
 
 interface ChatMessageDisplayProps {
   message: ChatMessage;
@@ -16,9 +39,44 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
   className = '' 
 }) => {
   const [showThinking, setShowThinking] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<Record<string, 'idle' | 'copied'>>({
+    user: 'idle',
+    assistant: 'idle'
+  });
+
+  // Handle copy button click
+  const handleCopy = (text: string, role: 'user' | 'assistant') => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopyStatus(prev => ({ ...prev, [role]: 'copied' }));
+      setTimeout(() => setCopyStatus(prev => ({ ...prev, [role]: 'idle' })), 2000);
+    });
+  };
+
+  // Format stats for display
+  const formatStats = () => {
+    if (!message.inference_time && !message.tokens_per_second) return null;
+
+    return (
+      <div className="flex items-center gap-2">
+        {message.inference_time && (
+          <div className="flex items-center">
+            <ClockIcon className="h-3 w-3 mr-1 text-gray-400" />
+            <span>{(message.inference_time / 1000).toFixed(2)}s</span>
+          </div>
+        )}
+        
+        {message.tokens_per_second && (
+          <div className="flex items-center">
+            <BoltIcon className="h-3 w-3 mr-1 text-gray-400" />
+            <span>{message.tokens_per_second.toFixed(1)} t/s</span>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Format timestamp
-  const formatTimestamp = (timestamp?: Date) => {
+  const formatTime = (timestamp?: Date) => {
     if (!timestamp) return '';
     return new Intl.DateTimeFormat('en-US', {
       hour: '2-digit',
@@ -29,147 +87,157 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
   // For system messages
   if (message.role === 'system') {
     return (
-      <div className={`flex justify-start ${className}`}>
-        <div className="max-w-[80%] py-2 px-4 rounded-lg bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
-          <div className="flex items-center mb-1 text-sm font-medium text-gray-500 dark:text-gray-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            System
-          </div>
-          <div className="whitespace-pre-wrap">{message.content}</div>
+      <div className="flex justify-center my-4">
+        <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 p-3 rounded-lg max-w-md text-sm">
+          {message.content}
         </div>
       </div>
     );
   }
 
-  // For user messages
-  if (message.role === 'user') {
-    return (
-      <div className={`flex justify-end ${className}`}>
-        <div className="max-w-[80%] py-2 px-4 rounded-lg bg-blue-600 text-white">
-          <div className="whitespace-pre-wrap">{message.content}</div>
-          {message.timestamp && (
-            <div className="text-xs mt-1 text-right text-blue-200">
-              {formatTimestamp(message.timestamp)}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const isUser = message.role === 'user';
 
-  // For AI assistant messages with think/answer separation
-  const hasThinking = message.think && message.think.trim().length > 0;
+  // Configure ReactMarkdown components
+  const markdownComponents: Components = {
+    code({ node, className, children, ...props }) {
+      const match = /language-(\w+)/.exec(className || '');
+      const isInline = !match;
+      return !isInline ? (
+        <SyntaxHighlighter
+          style={vscDarkPlus as any}
+          language={match ? match[1] : 'text'}
+          PreTag="div"
+          className="rounded"
+          {...props}
+        >
+          {String(children).replace(/\n$/, '')}
+        </SyntaxHighlighter>
+      ) : (
+        <code className={`${className} bg-gray-200 dark:bg-gray-800 px-1 py-0.5 rounded text-sm`} {...props}>
+          {children}
+        </code>
+      );
+    }
+  };
 
   return (
-    <div className={`flex justify-start ${className}`}>
-      <div className="max-w-[85%] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm">
-        {/* Header */}
-        <div className="p-3 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <div className="p-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-              </div>
-              <div>
-                <h4 className="text-sm font-medium text-gray-900 dark:text-white">AI Assistant</h4>
-                {isStreaming && (
-                  <div className="flex items-center space-x-1 text-xs text-gray-500 dark:text-gray-400">
-                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                    <span>Responding...</span>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
+      <div className={`flex items-start max-w-3xl ${isUser ? 'flex-row-reverse' : ''}`}>
+        {/* Avatar */}
+        <div className={`flex-shrink-0 ${isUser ? 'ml-3' : 'mr-3'}`}>
+          {isUser ? (
+            <UserCircleIcon className="h-8 w-8 text-blue-500 dark:text-blue-400" />
+          ) : (
+            <ComputerDesktopIcon className="h-8 w-8 text-green-500 dark:text-green-400" />
+          )}
+        </div>
+
+        {/* Message Content */}
+        <div className="flex flex-col relative w-full">          
+          <div
+            className={`p-3 rounded-lg ${
+              isUser
+                ? 'bg-blue-100 dark:bg-blue-800/60 text-gray-800 dark:text-gray-100'
+                : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-100'
+            }`}
+          >
+            {/* Thinking Section - Collapsible */}
+            {message.think && message.role === 'assistant' && (
+              <div className="mb-3">
+                <div 
+                  className="mb-1 flex items-center justify-between cursor-pointer select-none"
+                  onClick={() => setShowThinking(!showThinking)}
+                >
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center">
+                    {showThinking ? (
+                      <ChevronUpIcon className="h-3 w-3 mr-1" />
+                    ) : (
+                      <ChevronDownIcon className="h-3 w-3 mr-1" />
+                    )}
+                    Thinking process
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {showThinking ? "Hide" : "Show"}
+                  </span>
+                </div>
+                
+                {showThinking && (
+                  <div className="p-2 bg-gray-100 dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={markdownComponents}
+                    >
+                      {message.think}
+                    </ReactMarkdown>
                   </div>
                 )}
               </div>
-            </div>
-            
-            {hasThinking && !isStreaming && (
-              <button
-                onClick={() => setShowThinking(!showThinking)}
-                className="flex items-center space-x-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+            )}
+
+            {/* Main Content */}
+            {message.content ? (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={markdownComponents}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className={`h-3 w-3 transition-transform ${showThinking ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-                <span>{showThinking ? 'Hide' : 'Show'} AI Reasoning</span>
-              </button>
+                {message.content}
+              </ReactMarkdown>
+            ) : (
+              isStreaming && (
+                <div className="flex space-x-2 items-center h-6">
+                  <div className="w-2 h-2 rounded-full bg-gray-300 animate-pulse"></div>
+                  <div className="w-2 h-2 rounded-full bg-gray-300 animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                  <div className="w-2 h-2 rounded-full bg-gray-300 animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                </div>
+              )
             )}
           </div>
-        </div>
 
-        {/* Thinking Section (Collapsible) */}
-        {hasThinking && (showThinking || isStreaming) && (
-          <div className="p-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex items-start space-x-2">
-              <div className="flex-shrink-0">
-                <div className="p-1 rounded-full bg-yellow-100 dark:bg-yellow-900/30">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-yellow-600 dark:text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-              </div>
-              <div className="flex-1">
-                <h5 className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">AI Reasoning Process</h5>
-                <div className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap bg-white dark:bg-gray-800 rounded-md p-2 border border-gray-200 dark:border-gray-600">
-                  {message.think}
-                  {isStreaming && (
-                    <span className="inline-block w-2 h-4 bg-yellow-500 animate-pulse ml-1"></span>
+          {/* Timestamp, Stats, and Copy Button Row */}
+          <div className={`flex mt-1 text-xs text-gray-500 dark:text-gray-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
+            <div className="flex items-center gap-3">
+              {/* Copy button */}
+              {message.content && (
+                <button
+                  onClick={() => handleCopy(message.content, isUser ? 'user' : 'assistant')}
+                  className="flex items-center hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                  title={isUser ? "Copy prompt" : "Copy response"}
+                  aria-label={isUser ? "Copy prompt" : "Copy response"}
+                >
+                  {copyStatus[isUser ? 'user' : 'assistant'] === 'copied' ? (
+                    <CheckIcon className="h-3 w-3 mr-1 text-green-500" />
+                  ) : (
+                    <ClipboardIcon className="h-3 w-3 mr-1" />
                   )}
+                  <span>{copyStatus[isUser ? 'user' : 'assistant'] === 'copied' ? "Copied" : "Copy"}</span>
+                </button>
+              )}
+              
+              {/* Vertical separator if both copy button and timestamp exist */}
+              {message.content && message.timestamp && (
+                <span className="text-gray-300 dark:text-gray-600">|</span>
+              )}
+              
+              {/* Timestamp with clock icon */}
+              {message.timestamp && (
+                <div className="flex items-center">
+                  <ClockIcon className="h-3 w-3 mr-1" />
+                  <span>{formatTime(message.timestamp)}</span>
                 </div>
-              </div>
+              )}
+              
+              {/* Stats display */}
+              {(message.inference_time || message.tokens_per_second) && (
+                <>
+                  {message.timestamp && (
+                    <span className="text-gray-300 dark:text-gray-600">|</span>
+                  )}
+                  {formatStats()}
+                </>
+              )}
             </div>
           </div>
-        )}
-
-        {/* Answer Section */}
-        <div className="p-3">
-          <div className="flex items-start space-x-2">
-            <div className="flex-shrink-0">
-              <div className="p-1 rounded-full bg-green-100 dark:bg-green-900/30">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-            </div>
-            <div className="flex-1">
-              <h5 className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Response</h5>
-              <div className="text-gray-900 dark:text-white prose prose-sm dark:prose-invert max-w-none">
-                <ReactMarkdown>{message.content}</ReactMarkdown>
-                {isStreaming && (
-                  <span className="inline-block w-2 h-4 bg-green-500 animate-pulse ml-1"></span>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          {message.timestamp && !isStreaming && (
-            <div className="text-xs mt-2 text-right text-gray-400 dark:text-gray-500">
-              {formatTimestamp(message.timestamp)}
-            </div>
-          )}
         </div>
-
-        {/* Actions */}
-        {!isStreaming && (
-          <div className="px-3 py-2 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700 flex justify-end space-x-3">
-            <button
-              onClick={() => navigator.clipboard.writeText(message.content)}
-              className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-            >
-              Copy Response
-            </button>
-            {hasThinking && (
-              <button
-                onClick={() => navigator.clipboard.writeText(`${message.think}\n\n${message.content}`)}
-                className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-              >
-                Copy Full
-              </button>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );

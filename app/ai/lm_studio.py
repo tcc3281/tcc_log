@@ -18,13 +18,15 @@ logger = logging.getLogger(__name__)
 
 # Default configuration
 DEFAULT_LM_STUDIO_BASE_URL = "http://127.0.0.1:1234/v1"
-DEFAULT_AI_MODEL = "lmstudio-community/Qwen2.5-7B-Instruct-GGUF"  # Default model ID
+DEFAULT_AI_MODEL = "lmstudio-community/Qwen2.5-7B-Instruct-GGUF"
 DEFAULT_MAX_TOKENS = 1000
 DEFAULT_TEMPERATURE = 0.7
+DEFAULT_MAX_INFERENCE_TIME = 60000  # Default 60 seconds in milliseconds
 
 # Load from environment variables or use defaults
 LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", DEFAULT_LM_STUDIO_BASE_URL)
 AI_MODEL = os.getenv("LM_STUDIO_MODEL", DEFAULT_AI_MODEL)
+MAX_INFERENCE_TIME = int(os.getenv("LM_MAX_INFERENCE_TIME", DEFAULT_MAX_INFERENCE_TIME))
 
 # Initialize OpenAI client for LM Studio
 openai_client = AsyncOpenAI(
@@ -114,9 +116,13 @@ async def query_lm_studio(request: AIRequest, max_retries: int = 3) -> AIRespons
     retry_count = 0
     last_error = None
     
+    # Set timeout based on environment configuration - convert from milliseconds to seconds
+    timeout = MAX_INFERENCE_TIME / 1000
+    logger.debug(f"Using query timeout of {timeout} seconds (from config: {MAX_INFERENCE_TIME}ms)")
+    
     while retry_count < max_retries:
         try:
-            response = await _query_lm_studio_internal(request)
+            response = await _query_lm_studio_internal(request, timeout=timeout)
             return response
         except Exception as e:
             last_error = e
@@ -529,13 +535,17 @@ async def check_ai_service() -> Dict[str, Any]:
         }
 
 
-async def _query_lm_studio_internal(request: AIRequest) -> AIResponse:
+async def _query_lm_studio_internal(request: AIRequest, timeout: float = None) -> AIResponse:
     """
     Internal function to send a request to LM Studio API using OpenAI client with streaming support
     """
     model = request.model or AI_MODEL
     temperature = request.temperature or DEFAULT_TEMPERATURE
     max_tokens = request.max_tokens or DEFAULT_MAX_TOKENS
+    
+    # If no timeout specified, use the configured max inference time
+    if timeout is None:
+        timeout = MAX_INFERENCE_TIME / 1000
     
     # If model is placeholder or invalid, get the first available model
     if model == "your-model-identifier" or not model or model == DEFAULT_AI_MODEL:
@@ -563,14 +573,15 @@ async def _query_lm_studio_internal(request: AIRequest) -> AIResponse:
     messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
     
     try:
-        # Use OpenAI client to stream the response
+        # Use OpenAI client to stream the response with the configured timeout
         stream = await openai_client.chat.completions.create(
             model=model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
             stream=True,
-            tools=request.tools
+            tools=request.tools,
+            timeout=timeout  # Apply the timeout in seconds
         )
         
         # Initialize variables for collecting streamed response
@@ -623,6 +634,9 @@ async def _query_lm_studio_internal(request: AIRequest) -> AIResponse:
         )
         return ai_response
                 
+    except httpx.TimeoutException as e:
+        logger.error(f"Timeout error when querying LM Studio API: {e}")
+        raise Exception(f"The AI model took too long to respond (limit: {timeout:.1f}s). Try a shorter prompt or different model.")
     except httpx.HTTPStatusError as e:
         logger.error(f"HTTP error when querying LM Studio API: {e}")
         raise
@@ -642,9 +656,16 @@ async def query_lm_studio_stream(request: AIRequest):
         request: AIRequest object containing messages and parameters
         
     Yields:
-        str: Streaming chunks of the response
+        str or dict: Streaming chunks of the response or stats data
     """
     try:
+        import time
+        import json
+        start_time = time.time()
+        total_tokens = 0
+        first_token_time = None
+        has_yielded_content = False
+        
         logger.debug(f"Starting streaming query to LM Studio")
         logger.debug(f"Request model: {request.model or AI_MODEL}")
         logger.debug(f"Request messages count: {len(request.messages)}")
@@ -663,23 +684,63 @@ async def query_lm_studio_stream(request: AIRequest):
         logger.debug(f"Using model: {model}")
         logger.debug(f"Temperature: {temperature}, Max tokens: {max_tokens}")
         
-        # Make streaming request to OpenAI-compatible API
+        # Set timeout from configuration (convert from ms to seconds)
+        timeout = MAX_INFERENCE_TIME / 1000
+        
+        # Make streaming request to OpenAI-compatible API with timeout
         stream = await openai_client.chat.completions.create(
             model=model,
             messages=openai_messages,
             temperature=temperature,
             max_tokens=max_tokens,
-            stream=True
+            stream=True,
+            timeout=timeout  # Apply the configured timeout
         )
         
         logger.debug("Starting to process streaming response")
+        
+        # Store the complete content to check for stats at the end
+        complete_content = ""
         
         async for chunk in stream:
             if chunk.choices and len(chunk.choices) > 0:
                 delta = chunk.choices[0].delta
                 if delta.content:
-                    yield delta.content
+                    # Track the first token time
+                    if not has_yielded_content:
+                        has_yielded_content = True
+                        first_token_time = time.time() - start_time
+                        logger.debug(f"Time to first token: {first_token_time:.2f}s")
                     
+                    # Count tokens (roughly - this is approximate)
+                    # Simple approximation: ~4 chars per token
+                    total_tokens += len(delta.content) / 4
+                    
+                    complete_content += delta.content
+                    yield delta.content
+        
+        # Calculate final stats
+        end_time = time.time()
+        total_time = end_time - start_time
+        tokens_per_second = total_tokens / total_time if total_time > 0 else 0
+        
+        # Log stats
+        logger.info(f"Generation complete: {total_tokens:.0f} tokens in {total_time:.2f}s ({tokens_per_second:.1f} tokens/sec)")
+        
+        # Check if stats were already added to the content incorrectly
+        if complete_content.endswith('}') and '{"type":"stats"' in complete_content[-200:]:
+            logger.warning("Detected stats data in content, will be cleaned up by the API layer")
+        
+        # Send stats as a separate message
+        yield json.dumps({
+            "type": "stats",
+            "inference_time": int(total_time * 1000),  # Convert to milliseconds
+            "tokens_per_second": tokens_per_second
+        })
+                    
+    except httpx.TimeoutException as e:
+        logger.error(f"Timeout error in streaming query: {e}")
+        yield f"Error: The AI model took too long to respond (limit: {MAX_INFERENCE_TIME/1000:.1f}s). Try a shorter prompt or different model."
     except Exception as e:
         logger.error(f"Error in streaming query: {str(e)}")
         yield f"Error: {str(e)}"
@@ -704,9 +765,11 @@ async def chat_with_ai(
     """
     # Default system prompt if none provided
     if system_prompt is None:
-        system_prompt = """You are a helpful AI assistant. 
-        Provide clear, concise, and accurate responses to the user's questions.
-        Be friendly and conversational in your replies."""
+        system_prompt = """ou are a friendly and helpful AI assistant. 
+        Please answer user questions clearly, concisely, and accurately. 
+        Maintain a natural, approachable tone while ensuring reliable information. 
+        If needed, divide the answer into logically structured sections (e.g., lists, coherent paragraphs, or step-by-step explanations). 
+        Always be ready to clarify or expand on the answer if users request it."""
     
     # Initialize message list with system prompt
     messages = [AIMessage(role="system", content=system_prompt)]
@@ -765,7 +828,7 @@ async def chat_with_ai_stream(
         system_prompt: Optional system prompt override
         
     Yields:
-        str: Streaming chunks of the AI response
+        str or dict: Streaming chunks of the AI response or stats data
     """
     # Default system prompt if none provided
     if system_prompt is None:
@@ -780,7 +843,9 @@ async def chat_with_ai_stream(
         Then provide your main response after the think section.
         
         Provide clear, concise, and accurate responses to the user's questions.
-        Be friendly and conversational in your replies."""
+        Be friendly and conversational in your replies.
+        
+        You can use Markdown formatting in your responses, including tables using the GFM (GitHub Flavored Markdown) syntax."""
     
     # Initialize message list with system prompt
     messages = [AIMessage(role="system", content=system_prompt)]
@@ -805,7 +870,11 @@ async def chat_with_ai_stream(
     try:
         # Stream the AI response
         async for chunk in query_lm_studio_stream(request):
-            yield chunk
+            # Check if this is a stats message (JSON string)
+            if chunk.startswith('{"type":"stats"'):
+                yield chunk  # Pass through the stats data
+            else:
+                yield chunk  # Pass through regular content
             
     except Exception as e:
         logger.error(f"Error in streaming chat: {e}")
