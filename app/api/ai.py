@@ -129,8 +129,7 @@ async def chat(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Message cannot be empty"
             )
-        
-        # Convert history to the format expected by lm_studio
+          # Convert history to the format expected by lm_studio
         history = None
         if request.history:
             history = [
@@ -348,9 +347,13 @@ async def chat_with_ai_stream(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Message must be less than 2000 characters"
-            )
-          # Prepare message history
-        history = request.history or []
+            )        # Prepare message history
+        history = []
+        if request.history:
+            history = [
+                {"role": msg.role, "content": msg.content} 
+                for msg in request.history
+            ]
         
         async def generate_stream():
             try:

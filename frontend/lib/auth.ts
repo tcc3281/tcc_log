@@ -100,7 +100,7 @@ export async function getAuthToken(username: string, password: string) {
 }
 
 /**
- * Lấy thông tin người dùng qua token và username
+ * Lấy thông tin người dùng qua token
  */
 export async function getUserInfo(token: string) {
   try {
@@ -108,44 +108,25 @@ export async function getUserInfo(token: string) {
       throw new Error('Token is required');
     }
     
-    // Giải mã JWT token để lấy username
-    const decoded = parseJwt(token);
-    console.log('Decoded token:', decoded);
+    console.log('Getting user info with token...');
     
-    if (!decoded || !decoded.sub) {
-      throw new Error('Invalid token or missing subject (username)');
-    }
-    
-    // Lấy username từ token (JWT thường lưu trong trường 'sub')
-    const username = decoded.sub;
-    
-    // Đầu tiên, tìm user_id bằng cách gọi API users với filter username
-    console.log(`Finding user info for username: ${username}`);
-    
-    // Lấy danh sách tất cả người dùng (hoặc có thể cải thiện API để lọc theo username)
-    const usersResponse = await fetch(`${apiUrl}/users`, {
+    // Sử dụng endpoint /auth/me thay vì /users để lấy thông tin user hiện tại
+    const userResponse = await fetch(`${apiUrl}/auth/me`, {
       headers: {
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
       }
     });
     
-    if (!usersResponse.ok) {
-      const errorText = await usersResponse.text();
-      console.error('Error getting users list:', usersResponse.status, errorText);
-      throw new Error(`Failed to get users list: ${usersResponse.status} ${usersResponse.statusText}`);
+    if (!userResponse.ok) {
+      const errorText = await userResponse.text();
+      console.error('Error getting user info:', userResponse.status, errorText);
+      throw new Error(`Failed to get user info: ${userResponse.status} ${userResponse.statusText}`);
     }
     
-    const users = await usersResponse.json();
-    console.log('Users list:', users);
+    const user = await userResponse.json();
+    console.log('User info retrieved:', user);
     
-    // Tìm user theo username
-    const user = users.find((u: any) => u.username === username);
-    
-    if (!user) {
-      throw new Error(`User with username ${username} not found`);
-    }
-    
-    console.log('Found user:', user);
     return user;
   } catch (error) {
     console.error('Lỗi lấy thông tin người dùng:', error);

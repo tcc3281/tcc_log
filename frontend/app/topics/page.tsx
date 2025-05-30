@@ -23,17 +23,33 @@ const TopicsPage = () => {
   const [updatedTopicName, setUpdatedTopicName] = useState('');
   const [updatedDescription, setUpdatedDescription] = useState('');
   const router = useRouter();
-
   useEffect(() => {
     if (!user) return;
 
     const fetchTopics = async () => {
       try {
-        const res = await api.get('/topics');
+        console.log('Fetching topics with authentication...');
+        // Make sure the token is included in the request header
+        const token = localStorage.getItem('token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        
+        // First try to access with authentication
+        const res = await api.get('/topics', { headers });
         setTopics(res.data);
+        console.log('Topics fetched successfully:', res.data);
       } catch (err) {
         console.error('Error fetching topics:', err);
-        setError('Failed to load topics');
+        
+        // If authentication fails, try the public endpoint as a fallback
+        try {
+          console.log('Trying public topics endpoint as fallback...');
+          const publicRes = await api.get('/topics/public');
+          setTopics(publicRes.data);
+          console.log('Public topics fetched successfully:', publicRes.data);
+        } catch (fallbackErr) {
+          console.error('Error fetching public topics:', fallbackErr);
+          setError('Failed to load topics. Please try logging in again.');
+        }
       } finally {
         setLoading(false);
       }

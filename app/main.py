@@ -143,7 +143,7 @@ async def debug_routes():
 # IMPORTANT: Include API routers with explicit prefixes
 app.include_router(auth.router)
 app.include_router(users.router, prefix="/users")  # Add explicit prefix
-app.include_router(topics.router, prefix="/topics")  # Add explicit prefix
+app.include_router(topics.router, prefix="/topics")  # Add the prefix here
 app.include_router(entries.router, prefix="/entries")  # Ensure this line exists
 app.include_router(files.router, prefix="/files")  # Add explicit prefix
 app.include_router(links.router, prefix="/links")  # Add explicit prefix

@@ -247,7 +247,7 @@ export type StreamEventHandler = (data: ChatStreamData) => void;
  */
 export async function sendChatMessageStream(
   message: string,
-  history: ChatMessage[] = [],
+  history: { role: string; content: string }[] = [], // Change type to match API
   model?: string,
   systemPrompt?: string,
   onEvent?: StreamEventHandler
@@ -257,6 +257,14 @@ export async function sendChatMessageStream(
     const token = localStorage.getItem('token');
     const baseURL = 'http://localhost:8000'; // For development
     
+    console.log('Sending chat stream request:', {
+      message,
+      historyLength: history.length,
+      history: history,
+      model,
+      systemPrompt: systemPrompt?.substring(0, 50) + '...'
+    });
+    
     const response = await fetch(`${baseURL}/ai/chat-stream`, {
       method: 'POST',
       headers: {
@@ -265,7 +273,7 @@ export async function sendChatMessageStream(
       },
       body: JSON.stringify({
         message,
-        history,
+        history, // Send history as-is since it's already in correct format
         model,
         system_prompt: systemPrompt,
         stream: true
@@ -273,7 +281,9 @@ export async function sendChatMessageStream(
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      console.error('API Error:', response.status, errorText);
+      throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
     }
 
     const reader = response.body?.getReader();
