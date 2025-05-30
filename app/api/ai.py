@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+import json
 
 from .. import models, schemas
 from ..api.dependencies import get_db
@@ -62,6 +64,27 @@ class WritingSuggestionsResponse(BaseModel):
     suggestions: str
     raw_content: str
 
+# Chat-related models
+class ChatMessage(BaseModel):
+    role: str  # "user", "assistant", or "system"
+    content: str
+
+class ChatRequest(BaseModel):
+    message: str
+    history: Optional[List[ChatMessage]] = None
+    model: Optional[str] = None
+    system_prompt: Optional[str] = None
+    stream: bool = False  # Enable streaming
+
+class ChatResponse(BaseModel):
+    content: str
+    model: Optional[str] = None
+
+class ChatStreamData(BaseModel):
+    type: str  # "chunk", "thinking", "answer", "done", "error"
+    content: str
+    chunk_id: Optional[int] = None
+
 # Create router
 router = APIRouter(tags=["ai"])
 
@@ -90,6 +113,46 @@ async def list_models():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching models: {str(e)}"
+        )
+
+# Chat with AI
+@router.post("/chat", response_model=ChatResponse)
+async def chat(
+    request: ChatRequest,
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """Chat with the AI assistant"""
+    try:
+        # Validate message
+        if not request.message or len(request.message.strip()) < 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Message cannot be empty"
+            )
+        
+        # Convert history to the format expected by lm_studio
+        history = None
+        if request.history:
+            history = [
+                {"role": msg.role, "content": msg.content} 
+                for msg in request.history
+            ]
+        
+        # Process chat message
+        chat_response = await lm_studio.chat_with_ai(
+            message=request.message,
+            history=history,
+            model=request.model,
+            system_prompt=request.system_prompt
+        )
+        
+        return chat_response
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing chat: {str(e)}"
         )
 
 # Analyze a journal entry
@@ -264,4 +327,169 @@ async def get_writing_suggestions(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error getting writing suggestions: {str(e)}"
+        )
+
+# Streaming chat endpoint
+@router.post("/chat-stream")
+async def chat_with_ai_stream(
+    request: ChatRequest,
+    current_user: models.User = Depends(get_current_active_user)
+):
+    """Stream chat response with AI, supporting think/answer separation"""
+    try:
+        # Validate message
+        if not request.message.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Message cannot be empty"
+            )
+        
+        if len(request.message) > 2000:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Message must be less than 2000 characters"
+            )
+          # Prepare message history
+        history = request.history or []
+        
+        async def generate_stream():
+            try:
+                chunk_id = 0
+                thinking_content = ""
+                answer_content = ""
+                current_section = "answer"  # "thinking" or "answer"
+                in_think_tags = False
+                
+                async for chunk in lm_studio.chat_with_ai_stream(
+                    message=request.message,
+                    history=history,
+                    model=request.model,
+                    system_prompt=request.system_prompt
+                ):
+                    chunk_id += 1
+                    content = chunk  # chunk is already a string from chat_with_ai_stream
+                    
+                    # Parse thinking tags
+                    if "<think>" in content and not in_think_tags:
+                        in_think_tags = True
+                        current_section = "thinking"
+                        # Send any content before <think> as answer
+                        before_think = content.split("<think>")[0]
+                        if before_think.strip():
+                            answer_content += before_think
+                            data = {
+                                "type": "answer",
+                                "content": before_think,
+                                "chunk_id": chunk_id
+                            }
+                            yield f"data: {json.dumps(data)}\n\n"
+                        
+                        # Start thinking section
+                        thinking_part = content.split("<think>", 1)[1] if "<think>" in content else ""
+                        if "</think>" in thinking_part:
+                            # Complete thinking in one chunk
+                            think_content = thinking_part.split("</think>")[0]
+                            thinking_content += think_content
+                            data = {
+                                "type": "thinking",
+                                "content": think_content,
+                                "chunk_id": chunk_id
+                            }
+                            yield f"data: {json.dumps(data)}\n\n"
+                            
+                            # Continue with answer after </think>
+                            after_think = thinking_part.split("</think>", 1)[1] if "</think>" in thinking_part else ""
+                            if after_think.strip():
+                                answer_content += after_think
+                                data = {
+                                    "type": "answer", 
+                                    "content": after_think,
+                                    "chunk_id": chunk_id
+                                }
+                                yield f"data: {json.dumps(data)}\n\n"
+                            in_think_tags = False
+                            current_section = "answer"
+                        else:
+                            # Partial thinking content
+                            thinking_content += thinking_part
+                            data = {
+                                "type": "thinking",
+                                "content": thinking_part,
+                                "chunk_id": chunk_id
+                            }
+                            yield f"data: {json.dumps(data)}\n\n"
+                    elif "</think>" in content and in_think_tags:
+                        # End of thinking section
+                        think_part = content.split("</think>")[0]
+                        thinking_content += think_part
+                        data = {
+                            "type": "thinking",
+                            "content": think_part,
+                            "chunk_id": chunk_id
+                        }
+                        yield f"data: {json.dumps(data)}\n\n"
+                        
+                        # Continue with answer
+                        after_think = content.split("</think>", 1)[1] if "</think>" in content else ""
+                        if after_think.strip():
+                            answer_content += after_think
+                            data = {
+                                "type": "answer",
+                                "content": after_think,
+                                "chunk_id": chunk_id
+                            }
+                            yield f"data: {json.dumps(data)}\n\n"
+                        in_think_tags = False
+                        current_section = "answer"
+                    elif in_think_tags:
+                        # Inside thinking section
+                        thinking_content += content
+                        data = {
+                            "type": "thinking",
+                            "content": content,
+                            "chunk_id": chunk_id
+                        }
+                        yield f"data: {json.dumps(data)}\n\n"
+                    else:
+                        # Regular answer content
+                        answer_content += content
+                        data = {
+                            "type": "answer",
+                            "content": content,
+                            "chunk_id": chunk_id
+                        }
+                        yield f"data: {json.dumps(data)}\n\n"
+                
+                # Send completion signal
+                data = {
+                    "type": "done",
+                    "content": "",
+                    "chunk_id": chunk_id + 1
+                }
+                yield f"data: {json.dumps(data)}\n\n"
+                
+            except Exception as e:
+                error_data = {
+                    "type": "error",
+                    "content": str(e),
+                    "chunk_id": -1
+                }
+                yield f"data: {json.dumps(error_data)}\n\n"
+        
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/plain",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Content-Type": "text/event-stream"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error in streaming chat: {str(e)}"
         )

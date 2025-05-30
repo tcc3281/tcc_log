@@ -208,11 +208,164 @@ export async function getWritingSuggestions(
   }
 }
 
+/**
+ * Chat message structure
+ */
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp?: Date;
+  think?: string; // Add think field for AI responses
+}
+
+/**
+ * Chat response structure
+ */
+export interface ChatResponse {
+  content: string;
+  model?: string;
+  usage?: Record<string, number>;
+  error?: boolean;
+}
+
+/**
+ * Streaming chat data structure
+ */
+export interface ChatStreamData {
+  type: 'chunk' | 'thinking' | 'answer' | 'done' | 'error';
+  content: string;
+  chunk_id?: number;
+}
+
+/**
+ * Stream event callback
+ */
+export type StreamEventHandler = (data: ChatStreamData) => void;
+
+/**
+ * Send a streaming chat message
+ */
+export async function sendChatMessageStream(
+  message: string,
+  history: ChatMessage[] = [],
+  model?: string,
+  systemPrompt?: string,
+  onEvent?: StreamEventHandler
+): Promise<{ thinking: string; answer: string; fullContent: string }> {
+  try {
+    // Get the token from localStorage (same key as api.ts uses)
+    const token = localStorage.getItem('token');
+    const baseURL = 'http://localhost:8000'; // For development
+    
+    const response = await fetch(`${baseURL}/ai/chat-stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        message,
+        history,
+        model,
+        system_prompt: systemPrompt,
+        stream: true
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No reader available');
+    }
+
+    const decoder = new TextDecoder();
+    let thinking = '';
+    let answer = '';
+    let fullContent = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const jsonStr = line.slice(6); // Remove 'data: ' prefix
+              if (jsonStr.trim()) {
+                const data: ChatStreamData = JSON.parse(jsonStr);
+                
+                if (data.type === 'thinking') {
+                  thinking += data.content;
+                } else if (data.type === 'answer') {
+                  answer += data.content;
+                }
+                
+                fullContent += data.content;
+                
+                // Call event handler if provided
+                if (onEvent) {
+                  onEvent(data);
+                }
+                
+                // Break on done or error
+                if (data.type === 'done' || data.type === 'error') {
+                  return { thinking, answer, fullContent };
+                }
+              }
+            } catch (parseError) {
+              console.error('Error parsing SSE data:', parseError);
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return { thinking, answer, fullContent };
+  } catch (error) {
+    console.error('Error in streaming chat:', error);
+    throw error;
+  }
+}
+
+/**
+ * Send a message to the chatbot
+ */
+export async function sendChatMessage(
+  message: string,
+  history: ChatMessage[] = [],
+  model?: string,
+  systemPrompt?: string
+): Promise<ChatResponse> {
+  try {
+    const response = await api.post('/ai/chat', {
+      message,
+      history,
+      model,
+      system_prompt: systemPrompt
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error sending chat message:', error);
+    throw error;
+  }
+}
+
 export default {
   checkAIStatus,
   getAvailableModels,
   analyzeEntry,
   generatePrompts,
   improveWriting,
-  getWritingSuggestions
+  getWritingSuggestions,
+  sendChatMessage,
+  sendChatMessageStream
 };

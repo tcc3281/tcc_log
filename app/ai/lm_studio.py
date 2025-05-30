@@ -632,3 +632,185 @@ async def _query_lm_studio_internal(request: AIRequest) -> AIResponse:
     except Exception as e:
         logger.error(f"Error querying LM Studio API: {e}")
         raise
+
+
+async def query_lm_studio_stream(request: AIRequest):
+    """
+    Query LM Studio with streaming response
+    
+    Args:
+        request: AIRequest object containing messages and parameters
+        
+    Yields:
+        str: Streaming chunks of the response
+    """
+    try:
+        logger.debug(f"Starting streaming query to LM Studio")
+        logger.debug(f"Request model: {request.model or AI_MODEL}")
+        logger.debug(f"Request messages count: {len(request.messages)}")
+        
+        # Convert our AIMessage objects to OpenAI format
+        openai_messages = [
+            {"role": msg.role, "content": msg.content}
+            for msg in request.messages
+        ]
+        
+        # Set up parameters
+        model = request.model or AI_MODEL
+        temperature = request.temperature if request.temperature is not None else DEFAULT_TEMPERATURE
+        max_tokens = request.max_tokens if request.max_tokens is not None else DEFAULT_MAX_TOKENS
+        
+        logger.debug(f"Using model: {model}")
+        logger.debug(f"Temperature: {temperature}, Max tokens: {max_tokens}")
+        
+        # Make streaming request to OpenAI-compatible API
+        stream = await openai_client.chat.completions.create(
+            model=model,
+            messages=openai_messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True
+        )
+        
+        logger.debug("Starting to process streaming response")
+        
+        async for chunk in stream:
+            if chunk.choices and len(chunk.choices) > 0:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    yield delta.content
+                    
+    except Exception as e:
+        logger.error(f"Error in streaming query: {str(e)}")
+        yield f"Error: {str(e)}"
+
+async def chat_with_ai(
+    message: str,
+    history: List[Dict[str, str]] = None,
+    model: Optional[str] = None,
+    system_prompt: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Process a chat message with AI.
+    
+    Args:
+        message: The current user message
+        history: Previous conversation history (list of role/content pairs)
+        model: Optional model override
+        system_prompt: Optional system prompt override
+        
+    Returns:
+        Dict: AI response with content, model used, etc.
+    """
+    # Default system prompt if none provided
+    if system_prompt is None:
+        system_prompt = """You are a helpful AI assistant. 
+        Provide clear, concise, and accurate responses to the user's questions.
+        Be friendly and conversational in your replies."""
+    
+    # Initialize message list with system prompt
+    messages = [AIMessage(role="system", content=system_prompt)]
+    
+    # Add conversation history if provided
+    if history:
+        for msg in history:
+            if msg["role"] in ["user", "assistant", "system"]:
+                messages.append(AIMessage(role=msg["role"], content=msg["content"]))
+    
+    # Add current message
+    messages.append(AIMessage(role="user", content=message))
+    
+    # Create request
+    request = AIRequest(
+        messages=messages,
+        model=model,
+        temperature=0.7,
+        max_tokens=2000  # Larger context for chat
+    )
+    
+    try:
+        # Query the AI with retry logic
+        response = await query_lm_studio(request)
+        
+        return {
+            "content": response.content,
+            "model": response.model,
+            "usage": response.usage
+        }
+    except Exception as e:
+        logger.error(f"Error in chat: {e}")
+        error_msg = str(e)
+        if "Client disconnected" in error_msg:
+            error_msg = "The response took too long. Try asking a shorter question."
+        
+        return {
+            "content": f"Error: {error_msg}",
+            "model": model or AI_MODEL,
+            "error": True
+        }
+
+async def chat_with_ai_stream(
+    message: str,
+    history: List[Dict[str, str]] = None,
+    model: Optional[str] = None,
+    system_prompt: Optional[str] = None,
+):
+    """
+    Process a chat message with AI using streaming response.
+    
+    Args:
+        message: The current user message
+        history: Previous conversation history (list of role/content pairs)
+        model: Optional model override
+        system_prompt: Optional system prompt override
+        
+    Yields:
+        str: Streaming chunks of the AI response
+    """
+    # Default system prompt if none provided
+    if system_prompt is None:
+        system_prompt = """You are a helpful AI assistant. 
+        
+        You can structure your responses using <think>...</think> tags to show your reasoning process.
+        For example:
+        <think>
+        The user is asking about... Let me consider this carefully...
+        </think>
+        
+        Then provide your main response after the think section.
+        
+        Provide clear, concise, and accurate responses to the user's questions.
+        Be friendly and conversational in your replies."""
+    
+    # Initialize message list with system prompt
+    messages = [AIMessage(role="system", content=system_prompt)]
+    
+    # Add conversation history if provided
+    if history:
+        for msg in history:
+            if msg["role"] in ["user", "assistant", "system"]:
+                messages.append(AIMessage(role=msg["role"], content=msg["content"]))
+    
+    # Add current message
+    messages.append(AIMessage(role="user", content=message))
+    
+    # Create request
+    request = AIRequest(
+        messages=messages,
+        model=model,
+        temperature=0.7,
+        max_tokens=2000  # Larger context for chat
+    )
+    
+    try:
+        # Stream the AI response
+        async for chunk in query_lm_studio_stream(request):
+            yield chunk
+            
+    except Exception as e:
+        logger.error(f"Error in streaming chat: {e}")
+        error_msg = str(e)
+        if "Client disconnected" in error_msg:
+            error_msg = "The response took too long. Try asking a shorter question."
+        
+        yield f"Error: {error_msg}"
