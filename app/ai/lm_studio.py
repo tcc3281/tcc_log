@@ -7,7 +7,15 @@ import re
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import asyncio
-from openai import AsyncOpenAI
+
+# LangChain imports
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage as LCMessage
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableConfig
+from langchain_core.callbacks.manager import CallbackManager
+from langchain_core.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
 # Load environment variables
 load_dotenv()
@@ -28,10 +36,27 @@ LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", DEFAULT_LM_STUDIO_BASE_URL)
 AI_MODEL = os.getenv("LM_STUDIO_MODEL", DEFAULT_AI_MODEL)
 MAX_INFERENCE_TIME = int(os.getenv("LM_MAX_INFERENCE_TIME", DEFAULT_MAX_INFERENCE_TIME))
 
-# Initialize OpenAI client for LM Studio
-openai_client = AsyncOpenAI(
+# Initialize LangChain ChatOpenAI for LM Studio
+lm_studio_llm = ChatOpenAI(
     base_url=LM_STUDIO_BASE_URL,
-    api_key="not-needed"  # LM Studio doesn't require an API key
+    api_key="not-needed",  # LM Studio doesn't require an API key
+    model_name=AI_MODEL,
+    temperature=DEFAULT_TEMPERATURE,
+    max_tokens=DEFAULT_MAX_TOKENS,
+    streaming=False,
+    timeout=MAX_INFERENCE_TIME / 1000  # Convert from ms to seconds
+)
+
+# Initialize streaming LLM
+streaming_lm_studio_llm = ChatOpenAI(
+    base_url=LM_STUDIO_BASE_URL,
+    api_key="not-needed",
+    model_name=AI_MODEL,
+    temperature=DEFAULT_TEMPERATURE,
+    max_tokens=DEFAULT_MAX_TOKENS,
+    streaming=True,
+    timeout=MAX_INFERENCE_TIME / 1000,  # Convert from ms to seconds
+    callback_manager=CallbackManager([StreamingStdOutCallbackHandler()])
 )
 
 
@@ -111,7 +136,7 @@ def parse_ai_response(content: str) -> ParsedAIResponse:
 
 async def query_lm_studio(request: AIRequest, max_retries: int = 3) -> AIResponse:
     """
-    Query LM Studio with retry logic
+    Query LM Studio with retry logic using LangChain
     """
     retry_count = 0
     last_error = None
@@ -537,7 +562,7 @@ async def check_ai_service() -> Dict[str, Any]:
 
 async def _query_lm_studio_internal(request: AIRequest, timeout: float = None) -> AIResponse:
     """
-    Internal function to send a request to LM Studio API using OpenAI client with streaming support
+    Internal function to send a request to LM Studio API using LangChain
     """
     model = request.model or AI_MODEL
     temperature = request.temperature or DEFAULT_TEMPERATURE
@@ -569,80 +594,55 @@ async def _query_lm_studio_internal(request: AIRequest, timeout: float = None) -
     logger.info(f"Querying LM Studio with model: {model}")
     logger.debug(f"Request parameters: temp={temperature}, max_tokens={max_tokens}")
     logger.debug(f"Message count: {len(request.messages)}")
-      # Prepare messages in OpenAI format
-    messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+    
+    # Set up LangChain model with specific parameters for this request
+    llm = ChatOpenAI(
+        base_url=LM_STUDIO_BASE_URL,
+        api_key="not-needed",
+        model_name=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout  # Apply the timeout in seconds
+    )
+    
+    # Convert our AIMessage objects to LangChain message objects
+    langchain_messages = []
+    for msg in request.messages:
+        if msg.role == "system":
+            langchain_messages.append(SystemMessage(content=msg.content))
+        elif msg.role == "user":
+            langchain_messages.append(HumanMessage(content=msg.content))
+        elif msg.role == "assistant":
+            langchain_messages.append(LCMessage(content=msg.content))
     
     try:
-        # Use OpenAI client to stream the response with the configured timeout
-        stream = await openai_client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-            tools=request.tools,
-            timeout=timeout  # Apply the timeout in seconds
-        )
+        import time
+        start_time = time.time()
         
-        # Initialize variables for collecting streamed response
-        full_content = ""
-        model_name = model
-        usage_info = None
-          # Process the stream chunks
-        async for chunk in stream:
-            if hasattr(chunk, 'choices') and chunk.choices:
-                choice = chunk.choices[0]
-                if hasattr(choice, 'delta') and hasattr(choice.delta, 'content') and choice.delta.content is not None:
-                    content = choice.delta.content
-                    full_content += content
-                    # Log only snippets of content for debugging
-                    if len(content) > 50:
-                        logger.debug(f"Received content chunk: {content[:50]}...")
-                    else:
-                        logger.debug(f"Received content chunk: {content}")
-                
-                # Store model name if available
-                if hasattr(chunk, 'model'):
-                    model_name = chunk.model
-                
-                # Store usage info if available  
-                if hasattr(chunk, 'usage'):
-                    usage_info = {
-                        'prompt_tokens': getattr(chunk.usage, 'prompt_tokens', None),
-                        'completion_tokens': getattr(chunk.usage, 'completion_tokens', None),
-                        'total_tokens': getattr(chunk.usage, 'total_tokens', None)
-                    }        
-        logger.info(f"Completed streaming. Total content length: {len(full_content)}")
-        if not full_content:
-            raise ValueError("No content received from the stream")
+        # Invoke the model
+        response = await llm.ainvoke(langchain_messages)
         
-        # Trim any whitespace from the full content
-        full_content = full_content.strip()
+        end_time = time.time()
+        total_time = end_time - start_time
+        
+        # Extract content from LangChain response
+        full_content = response.content
         
         # Log a sample of the final content for debugging
         content_sample = full_content[:100] + "..." if len(full_content) > 100 else full_content
         logger.debug(f"Final content sample: {content_sample}")
-            
+        
         # Create response object with collected data
         ai_response = AIResponse(
             content=full_content,
-            model=model_name,
-            usage=usage_info,
-            tokens_per_second=None,  # Not available in streaming mode
-            time_to_first_token=None,  # Not available in streaming mode
-            tool_calls=None  # Tool calls not supported in streaming mode
+            model=model,
+            usage=None,  # Not directly available from LangChain
+            tokens_per_second=None,
+            time_to_first_token=None,
+            tool_calls=None
         )
         return ai_response
                 
-    except httpx.TimeoutException as e:
-        logger.error(f"Timeout error when querying LM Studio API: {e}")
-        raise Exception(f"The AI model took too long to respond (limit: {timeout:.1f}s). Try a shorter prompt or different model.")
-    except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error when querying LM Studio API: {e}")
-        raise
-    except httpx.RequestError as e:
-        logger.error(f"Network error when querying LM Studio API: {e}")
-        raise
     except Exception as e:
         logger.error(f"Error querying LM Studio API: {e}")
         raise
@@ -650,7 +650,7 @@ async def _query_lm_studio_internal(request: AIRequest, timeout: float = None) -
 
 async def query_lm_studio_stream(request: AIRequest):
     """
-    Query LM Studio with streaming response
+    Query LM Studio with streaming response using LangChain
     
     Args:
         request: AIRequest object containing messages and parameters
@@ -662,74 +662,58 @@ async def query_lm_studio_stream(request: AIRequest):
         import time
         import json
         start_time = time.time()
-        total_tokens = 0
-        first_token_time = None
-        has_yielded_content = False
         
         logger.debug(f"Starting streaming query to LM Studio")
         logger.debug(f"Request model: {request.model or AI_MODEL}")
-        logger.debug(f"Request messages count: {len(request.messages)}")
-        
-        # Convert our AIMessage objects to OpenAI format
-        openai_messages = [
-            {"role": msg.role, "content": msg.content}
-            for msg in request.messages
-        ]
         
         # Set up parameters
         model = request.model or AI_MODEL
         temperature = request.temperature if request.temperature is not None else DEFAULT_TEMPERATURE
         max_tokens = request.max_tokens if request.max_tokens is not None else DEFAULT_MAX_TOKENS
         
-        logger.debug(f"Using model: {model}")
-        logger.debug(f"Temperature: {temperature}, Max tokens: {max_tokens}")
-        
         # Set timeout from configuration (convert from ms to seconds)
         timeout = MAX_INFERENCE_TIME / 1000
         
-        # Make streaming request to OpenAI-compatible API with timeout
+        # Use direct OpenAI API streaming since LangChain streaming has issues
+        from openai import AsyncOpenAI
+        
+        # Initialize OpenAI client for LM Studio
+        openai_client = AsyncOpenAI(
+            base_url=LM_STUDIO_BASE_URL,
+            api_key="not-needed"  # LM Studio doesn't require an API key
+        )
+        
+        # Convert our AIMessage objects to OpenAI format
+        openai_messages = []
+        for msg in request.messages:
+            openai_messages.append({"role": msg.role, "content": msg.content})
+        
+        # Stream response directly using OpenAI client
         stream = await openai_client.chat.completions.create(
             model=model,
             messages=openai_messages,
             temperature=temperature,
             max_tokens=max_tokens,
             stream=True,
-            timeout=timeout  # Apply the configured timeout
+            timeout=timeout
         )
         
-        logger.debug("Starting to process streaming response")
-        
-        # Store the complete content to check for stats at the end
-        complete_content = ""
-        
+        collected_content = ""
         async for chunk in stream:
-            if chunk.choices and len(chunk.choices) > 0:
-                delta = chunk.choices[0].delta
-                if delta.content:
-                    # Track the first token time
-                    if not has_yielded_content:
-                        has_yielded_content = True
-                        first_token_time = time.time() - start_time
-                        logger.debug(f"Time to first token: {first_token_time:.2f}s")
-                    
-                    # Count tokens (roughly - this is approximate)
-                    # Simple approximation: ~4 chars per token
-                    total_tokens += len(delta.content) / 4
-                    
-                    complete_content += delta.content
-                    yield delta.content
+            if hasattr(chunk, 'choices') and chunk.choices:
+                choice = chunk.choices[0]
+                if hasattr(choice, 'delta') and hasattr(choice.delta, 'content') and choice.delta.content is not None:
+                    content = choice.delta.content
+                    collected_content += content
+                    yield content
         
         # Calculate final stats
         end_time = time.time()
         total_time = end_time - start_time
+        
+        # Estimate tokens based on content length (approximate)
+        total_tokens = len(collected_content) / 4
         tokens_per_second = total_tokens / total_time if total_time > 0 else 0
-        
-        # Log stats
-        logger.info(f"Generation complete: {total_tokens:.0f} tokens in {total_time:.2f}s ({tokens_per_second:.1f} tokens/sec)")
-        
-        # Check if stats were already added to the content incorrectly
-        if complete_content.endswith('}') and '{"type":"stats"' in complete_content[-200:]:
-            logger.warning("Detected stats data in content, will be cleaned up by the API layer")
         
         # Send stats as a separate message
         yield json.dumps({
@@ -737,20 +721,18 @@ async def query_lm_studio_stream(request: AIRequest):
             "inference_time": int(total_time * 1000),  # Convert to milliseconds
             "tokens_per_second": tokens_per_second
         })
-                    
-    except httpx.TimeoutException as e:
-        logger.error(f"Timeout error in streaming query: {e}")
-        yield f"Error: The AI model took too long to respond (limit: {MAX_INFERENCE_TIME/1000:.1f}s). Try a shorter prompt or different model."
+    
     except Exception as e:
         logger.error(f"Error in streaming query: {str(e)}")
         yield f"Error: {str(e)}"
+
 
 async def chat_with_ai(
     message: str,
     history: List[Dict[str, str]] = None,
     model: Optional[str] = None,
     system_prompt: Optional[str] = None,
-) -> Dict[str, Any]:
+):
     """
     Process a chat message with AI.
     
@@ -766,7 +748,7 @@ async def chat_with_ai(
     # Default system prompt if none provided
     if system_prompt is None:
         system_prompt = """You are a helpful AI assistant. 
-        Provide clear, concise, and accurate responses to the user's questions.
+        Provide clear, concise, and accurate responses to the user's questions.     "usage": response.usage
         Be friendly and conversational in your replies."""
     
     # Initialize message list with system prompt
@@ -788,16 +770,16 @@ async def chat_with_ai(
         temperature=0.7,
         max_tokens=2000  # Larger context for chat
     )
-    
     try:
         # Query the AI with retry logic
         response = await query_lm_studio(request)
-        
+        """
         return {
             "content": response.content,
             "model": response.model,
             "usage": response.usage
         }
+        """
     except Exception as e:
         logger.error(f"Error in chat: {e}")
         error_msg = str(e)
@@ -810,13 +792,14 @@ async def chat_with_ai(
             "error": True
         }
 
+
 async def chat_with_ai_stream(
     message: str,
     history: List[Dict[str, str]] = None,
     model: Optional[str] = None,
     system_prompt: Optional[str] = None,
 ):
-    """
+    """chat
     Process a chat message with AI using streaming response.
     
     Args:
@@ -831,19 +814,22 @@ async def chat_with_ai_stream(
     # Default system prompt if none provided
     if system_prompt is None:
         system_prompt = """You are a helpful AI assistant. 
-        
-        You can structure your responses using <think>...</think> tags to show your reasoning process.
-        For example:
+        You can structure your responses using <think>...</think> tags to show your reasoning process. It don't need to be used mardown formatting.
+        For example:    
         <think>
         The user is asking about... Let me consider this carefully...
         </think>
         
         Then provide your main response after the think section.
         
-        Provide clear, concise, and accurate responses to the user's questions.
+        Provide clear, concise, and accurate responses to the user's questions like:
+        1. Overview of the topic
+        2. Key points or steps
+        ...
         Be friendly and conversational in your replies.
-        
-        You can use Markdown formatting in your responses, including tables using the GFM (GitHub Flavored Markdown) syntax."""
+        You should use Markdown formatting in your responses, including headers, bulleted list,tables using the GFM (GitHub Flavored Markdown) syntax.
+        Finally, provide a conclusion or summary of your response.
+        """
     
     # Initialize message list with system prompt
     messages = [AIMessage(role="system", content=system_prompt)]
@@ -873,7 +859,7 @@ async def chat_with_ai_stream(
                 yield chunk  # Pass through the stats data
             else:
                 yield chunk  # Pass through regular content
-            
+    
     except Exception as e:
         logger.error(f"Error in streaming chat: {e}")
         error_msg = str(e)
