@@ -156,9 +156,7 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
                     )}
                     Thinking process
                   </span>
-                  <span className="text-xs text-gray-400">
-                    {showThinking ? "Hide" : "Show"}
-                  </span>
+                  {/* Removed the Show/Hide text but kept the collapsible functionality */}
                 </div>
                 
                 {showThinking && (
