@@ -171,7 +171,18 @@ const markdownComponents: Components = {
       return <div className="math-block overflow-x-auto" {...props}>{children}</div>;
     }
     return <p {...props}>{children}</p>;
-  }
+  },
+  // Add list components
+  ol: ({ children }) => <ol className="list-decimal pl-5 my-3 space-y-1">{children}</ol>,
+  ul: ({ children }) => <ul className="list-disc pl-5 my-3 space-y-1">{children}</ul>,
+  li: ({ children }) => <li className="mb-1">{children}</li>,
+  // Handle tables, blockquotes, and other elements with better styling
+  table: ({ children }) => <table className="border-collapse border-2 border-gray-300 dark:border-gray-600 my-4 w-full">{children}</table>,
+  tr: ({ children }) => <tr className="border-b-2 border-gray-300 dark:border-gray-600">{children}</tr>,
+  th: ({ children }) => <th className="border-2 border-gray-300 dark:border-gray-600 px-4 py-2 bg-gray-100 dark:bg-gray-800 font-semibold">{children}</th>,
+  td: ({ children }) => <td className="border-2 border-gray-300 dark:border-gray-600 px-4 py-2">{children}</td>,
+  blockquote: ({ children }) => <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic my-4">{children}</blockquote>,
+  img: (props) => <img {...props} className="max-w-full rounded my-4" alt={props.alt || "Image"} />
 };
 
 interface ChatMessageDisplayProps {
@@ -345,6 +356,16 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
           {/* Timestamp, Stats, and Copy Button Row */}
           <div className={`flex mt-1 text-xs text-gray-500 dark:text-gray-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
             <div className="flex items-center gap-3">
+              {/* Character and word count for user messages */}
+              {isUser && message.content && (
+                <>
+                  <span>{message.content.length} characters</span>
+                  <span className="text-gray-300 dark:text-gray-600">|</span>
+                  <span>{message.content.split(/\s+/).filter(Boolean).length} words</span>
+                  <span className="text-gray-300 dark:text-gray-600">|</span>
+                </>
+              )}
+              
               {/* Copy button */}
               {message.content && (
                 <button
