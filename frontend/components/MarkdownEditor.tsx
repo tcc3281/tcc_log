@@ -11,6 +11,9 @@ import 'katex/dist/katex.min.css';
 import emojiUtils from '../lib/emoji-utils';
 import styles from './MarkdownStyles.module.css';
 import EmojiPicker from './EmojiPicker';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import { Components } from 'react-markdown';
 
 // Mermaid initialization with more robust configuration
 // We'll initialize mermaid in the component to properly handle dark/light mode
@@ -104,6 +107,77 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     };
   }, []);
   
+  // Process LaTeX content before rendering
+  const processLatexContent = (content: string): string => {
+    if (!content) return '';
+
+    let processed = content;
+
+    // First, preserve existing properly formatted math expressions
+    const preservedMath: string[] = [];
+    
+    // Preserve display math ($$...$$)
+    processed = processed.replace(/\$\$([^$]+?)\$\$/g, (match, math) => {
+      const index = preservedMath.length;
+      preservedMath.push(match);
+      return `__PRESERVED_DISPLAY_${index}__`;
+    });
+    
+    // Preserve inline math ($...$)
+    processed = processed.replace(/\$([^$\n]+?)\$/g, (match, math) => {
+      const index = preservedMath.length;
+      preservedMath.push(match);
+      return `__PRESERVED_INLINE_${index}__`;
+    });
+
+    // Fix malformed expressions like "A = $\begin{bmatrix}..." (missing closing $)
+    processed = processed.replace(/\$\$\\begin\{([^}]+)\}([^$]*?)\\end\{\1\}(?!\$)/g, (match, env, content) => {
+      const cleanContent = content.replace(/\s*\\\\\s*/g, ' \\\\ ').trim();
+      return `$$\\begin{${env}}${cleanContent}\\end{${env}}$$`;
+    });
+
+    // Convert \[ ... \] to $$ ... $$ (display math)
+    processed = processed.replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (match, math) => {
+      const cleanMath = math
+        .replace(/\s*\\\\\s*/g, ' \\\\ ') // Normalize line breaks
+        .replace(/\s+/g, ' ') // Normalize spaces
+        .trim();
+      return `$$${cleanMath}$$`;
+    });
+
+    // Convert \( ... \) to $ ... $ (inline math)
+    processed = processed.replace(/\\\(\s*([\s\S]*?)\s*\\\)/g, (match, math) => {
+      const cleanMath = math.trim();
+      return `$${cleanMath}$`;
+    });
+
+    // Handle standalone matrix environments that aren't already in math mode
+    processed = processed.replace(/(?<!\$)\\begin\{([^}]+)\}([\s\S]*?)\\end\{\1\}(?!\$)/g, (match, env, content) => {
+      const cleanContent = content
+        .replace(/\s*\\\\\s*/g, ' \\\\ ') // Normalize line breaks
+        .replace(/\s+/g, ' ') // Normalize spaces
+        .trim();
+      return `$$\\begin{${env}}${cleanContent}\\end{${env}}$$`;
+    });
+
+    // Clean up whitespace around math delimiters
+    processed = processed.replace(/\$\s+/g, '$');
+    processed = processed.replace(/\s+\$/g, '$');
+    processed = processed.replace(/\$\$\s+/g, '$$');
+    processed = processed.replace(/\s+\$\$/g, '$$');
+
+    // Restore preserved math expressions
+    preservedMath.forEach((math, index) => {
+      processed = processed.replace(`__PRESERVED_DISPLAY_${index}__`, math);
+      processed = processed.replace(`__PRESERVED_INLINE_${index}__`, math);
+    });
+
+    // Final cleanup - normalize multiple dollar signs to display math
+    processed = processed.replace(/\$\$\$+/g, '$$');
+
+    return processed;
+  };
+
   // Process markdown for preview
   const processedMarkdown = React.useMemo(() => {
     let processed = value;
@@ -610,6 +684,80 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
       className: splitView ? "bg-blue-500 dark:bg-blue-700 text-white font-medium" : "bg-white dark:bg-gray-700"
     }
   ];
+
+  // Update the preview section to use the new components
+  const markdownComponents: Components = {
+    code({ node, className, children, ...props }) {
+      const match = /language-(\w+)/.exec(className || '');
+      const isInline = !match;
+      const content = String(children).replace(/\n$/, '');
+      
+      // Check if this is a LaTeX code block
+      if (match && match[1] === 'latex') {
+        // Process the LaTeX content
+        const processedContent = processLatexContent(content);
+        
+        return (
+          <div className="my-4">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+              components={{
+                // Override code component to prevent double rendering
+                code: ({ node, ...props }) => <span {...props} />,
+                // Override paragraph to handle math blocks
+                p: ({ node, children, ...props }) => {
+                  const content = React.Children.toArray(children).join('');
+                  if (content.startsWith('$$') && content.endsWith('$$')) {
+                    return <div className="math-block overflow-x-auto" {...props}>{children}</div>;
+                  }
+                  return <p {...props}>{children}</p>;
+                }
+              }}
+            >
+              {processedContent}
+            </ReactMarkdown>
+          </div>
+        );
+      }
+      
+      return !isInline ? (
+        <SyntaxHighlighter
+          style={vscDarkPlus as any}
+          language={match ? match[1] : 'text'}
+          PreTag="div"
+          className="rounded"
+          {...props}
+        >
+          {content}
+        </SyntaxHighlighter>
+      ) : (
+        <code className={`${className} bg-gray-200 dark:bg-gray-800 px-1 py-0.5 rounded text-sm`} {...props}>
+          {children}
+        </code>
+      );
+    },
+    // Add paragraph component to handle math blocks
+    p({ node, children, ...props }) {
+      const content = React.Children.toArray(children).join('');
+      if (content.startsWith('$$') && content.endsWith('$$')) {
+        return <div className="math-block overflow-x-auto" {...props}>{children}</div>;
+      }
+      return <p {...props}>{children}</p>;
+    },
+    // Add list components
+    ol: (props) => <ol className="list-decimal pl-5 my-3 space-y-1" {...props} />,
+    ul: (props) => <ul className="list-disc pl-5 my-3 space-y-1" {...props} />,
+    li: (props) => <li className="mb-1" {...props} />,
+    // Handle tables, blockquotes, and other elements with better styling
+    table: (props) => <table className="border-collapse border-2 border-gray-300 dark:border-gray-600 my-4 w-full" {...props} />,
+    tr: (props) => <tr className="border-b-2 border-gray-300 dark:border-gray-600" {...props} />,
+    th: (props) => <th className="border-2 border-gray-300 dark:border-gray-600 px-4 py-2 bg-gray-100 dark:bg-gray-800 font-semibold" {...props} />,
+    td: (props) => <td className="border-2 border-gray-300 dark:border-gray-600 px-4 py-2" {...props} />,
+    blockquote: (props) => <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic my-4" {...props} />,
+    img: (props) => <img {...props} className="max-w-full rounded my-4" alt={props.alt || "Image"} />
+  };
+
   return (
     <div className="border border-gray-300 dark:border-gray-600 rounded-md overflow-hidden relative">
       {/* Emoji Picker */}      {showEmojiPicker && emojiPickerAnchor && (
@@ -686,33 +834,14 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           </div>
         )}
           {/* Show preview if in preview-only or split mode */}        {(isPreview || splitView) && (
-          <div 
-            ref={previewRef}
-            className={`${splitView ? 'w-1/2' : 'w-full'} overflow-auto p-4 prose dark:prose-invert max-w-none flex-grow markdown-preview`}
-            style={{ minHeight: '400px', maxHeight: '100%' }}
-            key={`preview-${isPreview ? "preview" : "split"}-${Date.now()}-${value.length}`} // Force re-render on view change and content change
-          >
+          <div className="prose dark:prose-invert max-w-none p-4 overflow-y-auto" ref={previewRef}>
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                code: CodeBlock,
-                // Handle tables, blockquotes, and other elements with better styling
-                table: ({ children }) => <table className="border-collapse border border-gray-300 dark:border-gray-700 my-4 w-full">{children}</table>,
-                tr: ({ children }) => <tr className="border-b border-gray-300 dark:border-gray-700">{children}</tr>,
-                th: ({ children }) => <th className="border border-gray-300 dark:border-gray-700 px-4 py-2 bg-gray-100 dark:bg-gray-800">{children}</th>,
-                td: ({ children }) => <td className="border border-gray-300 dark:border-gray-700 px-4 py-2">{children}</td>,
-                blockquote: ({ children }) => <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic my-4">{children}</blockquote>,
-                img: (props) => <img {...props} className="max-w-full rounded my-4" alt={props.alt || "Image"} />
-              }}
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
+              components={markdownComponents}
             >
-              {processedMarkdown}
+              {processLatexContent(value)}
             </ReactMarkdown>
-            
-            {!value && (
-              <div className="text-gray-400 dark:text-gray-500 italic">
-                Nothing to preview
-              </div>
-            )}
           </div>
         )}
       </div>
