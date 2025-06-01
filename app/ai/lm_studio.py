@@ -182,8 +182,7 @@ async def analyze_journal_entry(
         
     Returns:
         Dict: Analysis result with think, answer, and raw content
-    """
-    # Define system prompts based on analysis type
+    """    # Define system prompts based on analysis type
     system_prompts = {
         "general": """Analyze this journal entry briefly. Focus on key themes and main points.
                      Keep your response under 200 words.
@@ -234,44 +233,47 @@ async def analyze_journal_entry(
                       [Your final response]"""
     }
     
-    # Get appropriate prompt
+    # Define max tokens for each analysis type
+    max_tokens_map = {
+        "general": 800,
+        "mood": 800,
+        "summary": 600,
+        "insights": 700
+    }
+    
+    # Get appropriate prompt and max tokens
     system_prompt = system_prompts.get(analysis_type, system_prompts["general"])
+    max_tokens = max_tokens_map.get(analysis_type, 800)
     
-    # Create LangChain prompt template
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("human", "Journal title: {title}\n\nJournal content:\n{content}")
-    ])
+    # Prepare messages for the AI
+    messages = [
+        AIMessage(role="system", content=system_prompt),
+        AIMessage(
+            role="user", 
+            content=f"Journal title: {entry_title}\n\nJournal content:\n{entry_content}"
+        )
+    ]
     
-    # Create LLM with selected model
-    llm = ChatOpenAI(
-        base_url=LM_STUDIO_BASE_URL,
-        api_key="not-needed",
-        model_name=model or AI_MODEL,
+    # Create request
+    request = AIRequest(
+        messages=messages,
+        model=model,
         temperature=0.7,
-        max_tokens=2000,
-        timeout=MAX_INFERENCE_TIME / 1000
+        max_tokens=max_tokens
     )
     
-    # Create chain with the specific LLM
-    chain = prompt | llm | StrOutputParser()
-    
     try:
-        # Run the chain
-        response = await chain.ainvoke({
-            "title": entry_title,
-            "content": entry_content
-        })
+        # Query the AI with retry logic
+        response = await query_lm_studio(request)
         
         # Parse the response to separate think and answer
-        parsed_response = parse_ai_response(response)
+        parsed_response = parse_ai_response(response.content)
         
         return {
             "think": parsed_response.think,
             "answer": parsed_response.answer,
             "raw_content": parsed_response.raw_content,
-            "analysis_type": analysis_type,
-            "model": model or AI_MODEL  # Include the model used in response
+            "analysis_type": analysis_type
         }
     except Exception as e:
         logger.error(f"Error analyzing journal entry: {e}")
@@ -283,8 +285,7 @@ async def analyze_journal_entry(
             "think": None,
             "answer": error_msg,
             "raw_content": error_msg,
-            "analysis_type": analysis_type,
-            "model": model or AI_MODEL  # Include the model used even in error case
+            "analysis_type": analysis_type
         }
 
 
@@ -325,21 +326,26 @@ Maintain the original meaning, tone, and personal voice while making it signific
     # Get appropriate prompt
     system_prompt = system_prompts.get(improvement_type, system_prompts["complete"])
     
-    # Create LangChain prompt template
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("human", "Please improve this text:\n\n{text}")
-    ])
+    # Prepare messages
+    messages = [
+        AIMessage(role="system", content=system_prompt),
+        AIMessage(role="user", content=f"Please improve this text:\n\n{text}")
+    ]
     
-    # Create chain
-    chain = prompt | lm_studio_llm | StrOutputParser()
+    # Create request
+    request = AIRequest(
+        messages=messages,
+        model=model,
+        temperature=0.3,  # Lower temperature for more consistent improvements
+        max_tokens=1500
+    )
     
     try:
-        # Run the chain
-        response = await chain.ainvoke({"text": text})
+        # Query the AI
+        response = await query_lm_studio(request)
         
         # Parse the response to separate think and answer
-        parsed_response = parse_ai_response(response)
+        parsed_response = parse_ai_response(response.content)
         
         return {
             "think": parsed_response.think,
@@ -397,21 +403,23 @@ Format your response as:
 
 Be specific and constructive in your feedback."""
     
-    # Create LangChain prompt template
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("human", "Please analyze and provide improvement suggestions for this text:\n\n{text}")
-    ])
+    messages = [
+        AIMessage(role="system", content=system_prompt),
+        AIMessage(role="user", content=f"Please analyze and provide improvement suggestions for this text:\n\n{text}")
+    ]
     
-    # Create chain
-    chain = prompt | lm_studio_llm | StrOutputParser()
+    request = AIRequest(
+        messages=messages,
+        model=model,
+        temperature=0.4,
+        max_tokens=1000
+    )
     
     try:
-        # Run the chain
-        response = await chain.ainvoke({"text": text})
+        response = await query_lm_studio(request)
         
         # Parse the response to separate think and answer
-        parsed_response = parse_ai_response(response)
+        parsed_response = parse_ai_response(response.content)
         
         return {
             "think": parsed_response.think,
@@ -965,7 +973,7 @@ async def chat_with_ai(
         If streaming=True: Yields streaming chunks of the AI response or stats data
     """
     if use_agent:
-        # Create agent instance with selected model
+        # Create agent instance
         agent = LangChainAgent(
             model_name=model or AI_MODEL,
             system_prompt=system_prompt,
@@ -977,10 +985,10 @@ async def chat_with_ai(
             async for response in agent.chat(message, streaming=True):
                 yield response
         else:
-            async for response in agent.chat(message, streaming=False):
-                yield response
+            response = await agent.chat(message, streaming=False)
+            yield response
     else:
-        # Use LangChain directly without agent
+        # Use original chat implementation
         # Default system prompt if none provided
         if system_prompt is None:
             system_prompt = """You are a helpful AI assistant. 
@@ -1029,66 +1037,44 @@ async def chat_with_ai(
             You should use Markdown formatting in your responses, including headers, bulleted lists, tables using the GFM (GitHub Flavored Markdown) syntax.
             Finally, provide a conclusion or summary of your response."""
         
-        # Create LangChain prompt template
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            MessagesPlaceholder(variable_name="chat_history"),
-            ("human", "{input}")
-        ])
+        # Initialize message list with system prompt
+        messages = [AIMessage(role="system", content=system_prompt)]
         
-        # Create LLM with selected model
-        llm = ChatOpenAI(
-            base_url=LM_STUDIO_BASE_URL,
-            api_key="not-needed",
-            model_name=model or AI_MODEL,
+        # Add conversation history if provided
+        if history:
+            for msg in history:
+                if msg["role"] in ["user", "assistant", "system"]:
+                    messages.append(AIMessage(role=msg["role"], content=msg["content"]))
+        
+        # Add current message
+        messages.append(AIMessage(role="user", content=message))
+        
+        # Create request
+        request = AIRequest(
+            messages=messages,
+            model=model,
             temperature=0.7,
-            max_tokens=2000,
-            streaming=streaming,
-            timeout=MAX_INFERENCE_TIME / 1000
+            max_tokens=2000  # Larger context for chat
         )
         
-        # Create chain
-        chain = prompt | llm | StrOutputParser()
-        
         try:
-            # Convert history to LangChain message format
-            chat_history = []
-            if history:
-                for msg in history:
-                    if msg["role"] == "system":
-                        chat_history.append(SystemMessage(content=msg["content"]))
-                    elif msg["role"] == "user":
-                        chat_history.append(HumanMessage(content=msg["content"]))
-                    elif msg["role"] == "assistant":
-                        chat_history.append(LCMessage(content=msg["content"]))
-            
             if streaming:
-                # Stream the response
+                # Stream the AI response
                 collected_content = ""
-                async for chunk in chain.astream({
-                    "chat_history": chat_history,
-                    "input": message
-                }):
-                    collected_content += chunk
-                    yield chunk
-                
-                # Send stats
-                yield json.dumps({
-                    "type": "stats",
-                    "inference_time": 0,  # Not available in streaming mode
-                    "tokens_per_second": 0
-                })
+                async for chunk in query_lm_studio_stream(request):
+                    # Check if this is a stats message (JSON string)
+                    if chunk.startswith('{"type":"stats"'):
+                        yield chunk  # Pass through the stats data
+                    else:
+                        collected_content += chunk
+                        yield chunk  # Pass through regular content
             else:
-                # Get complete response
-                response = await chain.ainvoke({
-                    "chat_history": chat_history,
-                    "input": message
-                })
-                
+                # Query the AI with retry logic
+                response = await query_lm_studio(request)
                 yield {
-                    "content": response,
-                    "model": model or AI_MODEL,
-                    "usage": None  # Not available in LangChain
+                    "content": response.content,
+                    "model": response.model,
+                    "usage": response.usage
                 }
         
         except Exception as e:
