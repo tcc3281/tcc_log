@@ -17,8 +17,11 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column('users', sa.Column('profile_image_url', sa.String(), nullable=True))
+    # Không làm gì cả vì cột đã được định nghĩa trong model và sẽ được tạo
+    # bởi Base.metadata.create_all khi khởi động ứng dụng
+    pass
 
 
 def downgrade():
-    op.drop_column('users', 'profile_image_url')
+    # Không làm gì cả vì chúng ta muốn giữ cột này
+    pass

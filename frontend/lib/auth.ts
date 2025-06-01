@@ -137,11 +137,10 @@ export async function getUserInfo(token: string) {
 /**
  * Đăng ký người dùng mới
  */
-export async function registerUser(username: string, email: string, password: string) {
-  try {
+export async function registerUser(username: string, email: string, password: string) {  try {
     console.log(`Registering new user: ${username}, ${email}`);
     
-    const response = await fetch(`${apiUrl}/users`, {
+    const response = await fetch(`${apiUrl}/users/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

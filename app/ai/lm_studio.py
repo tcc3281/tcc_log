@@ -40,30 +40,6 @@ LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", DEFAULT_LM_STUDIO_BASE_URL)
 AI_MODEL = os.getenv("LM_STUDIO_MODEL", DEFAULT_AI_MODEL)
 MAX_INFERENCE_TIME = int(os.getenv("LM_MAX_INFERENCE_TIME", DEFAULT_MAX_INFERENCE_TIME))
 
-# Initialize LangChain ChatOpenAI for LM Studio
-lm_studio_llm = ChatOpenAI(
-    base_url=LM_STUDIO_BASE_URL,
-    api_key="not-needed",  # LM Studio doesn't require an API key
-    model_name=AI_MODEL,
-    temperature=DEFAULT_TEMPERATURE,
-    max_tokens=DEFAULT_MAX_TOKENS,
-    streaming=False,
-    timeout=MAX_INFERENCE_TIME / 1000  # Convert from ms to seconds
-)
-
-# Initialize streaming LLM
-streaming_lm_studio_llm = ChatOpenAI(
-    base_url=LM_STUDIO_BASE_URL,
-    api_key="not-needed",
-    model_name=AI_MODEL,
-    temperature=DEFAULT_TEMPERATURE,
-    max_tokens=DEFAULT_MAX_TOKENS,
-    streaming=True,
-    timeout=MAX_INFERENCE_TIME / 1000,  # Convert from ms to seconds
-    callback_manager=CallbackManager([StreamingStdOutCallbackHandler()])
-)
-
-
 class AIMessage(BaseModel):
     """Structure for AI message content"""
     role: str  # "system", "user", or "assistant"
@@ -1028,7 +1004,8 @@ async def chat_with_ai(
                a_{21} & a_{22}
                \end{bmatrix}
                ```
-            
+            If there are compared requirement, create table with markdown to compare between objecs.
+            Bold the key word in the answer.
             Provide clear, concise, and accurate responses to the user's questions like:
             1. Overview of the topic
             2. Key points or steps
