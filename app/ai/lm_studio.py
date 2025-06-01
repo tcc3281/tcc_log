@@ -16,6 +16,10 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
 from langchain_core.callbacks.manager import CallbackManager
 from langchain_core.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain.agents import AgentExecutor, create_openai_functions_agent
+from langchain_core.tools import Tool
+from langchain.memory import ConversationBufferMemory
+from langchain_core.prompts import MessagesPlaceholder
 
 # Load environment variables
 load_dotenv()
@@ -27,7 +31,7 @@ logger = logging.getLogger(__name__)
 # Default configuration
 DEFAULT_LM_STUDIO_BASE_URL = "http://127.0.0.1:1234/v1"
 DEFAULT_AI_MODEL = "lmstudio-community/Qwen2.5-7B-Instruct-GGUF"
-DEFAULT_MAX_TOKENS = 1000
+DEFAULT_MAX_TOKENS = 2000
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_MAX_INFERENCE_TIME = 60000  # Default 60 seconds in milliseconds
 
@@ -727,11 +731,230 @@ async def query_lm_studio_stream(request: AIRequest):
         yield f"Error: {str(e)}"
 
 
+class ConversationMemory:
+    """Class to manage conversation memory"""
+    def __init__(self, max_messages: int = 10):
+        self.max_messages = max_messages
+        self.messages: List[Dict[str, str]] = []
+    
+    def add_message(self, role: str, content: str):
+        """Add a message to memory"""
+        self.messages.append({"role": role, "content": content})
+        # Keep only the last max_messages
+        if len(self.messages) > self.max_messages:
+            self.messages = self.messages[-self.max_messages:]
+    
+    def get_messages(self) -> List[Dict[str, str]]:
+        """Get all messages in memory"""
+        return self.messages
+    
+    def clear(self):
+        """Clear all messages"""
+        self.messages = []
+
+
+class LangChainAgent:
+    """Class to manage LangChain Agent and memory"""
+    def __init__(
+        self,
+        model_name: str = AI_MODEL,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        tools: Optional[List[Tool]] = None,
+        system_prompt: Optional[str] = None
+    ):
+        self.model_name = model_name
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.tools = tools or []
+        self.system_prompt = system_prompt or """You are a helpful AI assistant. 
+        You can structure your responses using <think>...</think> tags to show your reasoning process.
+        For example:    
+        <think>
+        The user is asking about... Let me consider this carefully...
+        </think>
+        
+        Then provide your main response after the think section.
+        
+        When using LaTeX for mathematical expressions, follow these guidelines:
+        1. For inline math (within a sentence), use \(...\) delimiters:
+           Example: "The formula \(E = mc^2\) is famous."
+        
+        2. For display math (on its own line), use \[...\] delimiters:
+           Example: "The quadratic formula is:
+           \[
+           x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+           \]"
+        
+        3. For matrices and other environments, use \[...\] with the appropriate environment:
+           Example: "The matrix A is:
+           \[
+           \begin{bmatrix}
+           a_{11} & a_{12} \\
+           a_{21} & a_{22}
+           \end{bmatrix}
+           \]"
+        
+        4. For code blocks containing LaTeX, use the latex language identifier:
+           ```latex
+           \begin{bmatrix}
+           a_{11} & a_{12} \\
+           a_{21} & a_{22}
+           \end{bmatrix}
+           ```
+        
+        Provide clear, concise, and accurate responses to the user's questions like:
+        1. Overview of the topic
+        2. Key points or steps
+        ...
+        Be friendly and conversational in your replies.
+        You should use Markdown formatting in your responses, including headers, bulleted lists, tables using the GFM (GitHub Flavored Markdown) syntax.
+        Finally, provide a conclusion or summary of your response."""
+        
+        # Initialize memory
+        self.memory = ConversationBufferMemory(
+            memory_key="chat_history",
+            return_messages=True
+        )
+        
+        # Initialize LLM
+        self.llm = ChatOpenAI(
+            base_url=LM_STUDIO_BASE_URL,
+            api_key="not-needed",
+            model_name=self.model_name,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            streaming=False
+        )
+        
+        # Initialize streaming LLM
+        self.streaming_llm = ChatOpenAI(
+            base_url=LM_STUDIO_BASE_URL,
+            api_key="not-needed",
+            model_name=self.model_name,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            streaming=True,
+            callback_manager=CallbackManager([StreamingStdOutCallbackHandler()])
+        )
+        
+        # Create prompt template
+        self.prompt = ChatPromptTemplate.from_messages([
+            ("system", self.system_prompt),
+            MessagesPlaceholder(variable_name="chat_history"),
+            ("human", "{input}"),
+            MessagesPlaceholder(variable_name="agent_scratchpad"),
+        ])
+        
+        # Create agent
+        self.agent = create_openai_functions_agent(
+            llm=self.llm,
+            tools=self.tools,
+            prompt=self.prompt
+        )
+        
+        # Create agent executor
+        self.agent_executor = AgentExecutor(
+            agent=self.agent,
+            tools=self.tools,
+            memory=self.memory,
+            verbose=True
+        )
+        
+        # Create streaming agent executor
+        self.streaming_agent_executor = AgentExecutor(
+            agent=self.agent,
+            tools=self.tools,
+            memory=self.memory,
+            verbose=True
+        )
+    
+    async def chat(
+        self,
+        message: str,
+        streaming: bool = False
+    ):
+        """
+        Process a chat message with the agent.
+        
+        Args:
+            message: The user message
+            streaming: Whether to use streaming response
+            
+        Returns:
+            If streaming=False: Dict containing response content and metadata
+            If streaming=True: Yields streaming chunks of the response
+        """
+        try:
+            if streaming:
+                # Stream the response
+                collected_content = ""
+                async for chunk in self.streaming_agent_executor.astream({"input": message}):
+                    if "output" in chunk:
+                        content = chunk["output"]
+                        collected_content += content
+                        yield content
+                
+                # Add to memory
+                self.memory.chat_memory.add_user_message(message)
+                self.memory.chat_memory.add_ai_message(collected_content)
+            else:
+                # Get complete response
+                response = await self.agent_executor.ainvoke({"input": message})
+                
+                # Add to memory
+                self.memory.chat_memory.add_user_message(message)
+                self.memory.chat_memory.add_ai_message(response["output"])
+                
+                yield {
+                    "content": response["output"],
+                    "model": self.model_name,
+                    "usage": None  # LangChain doesn't provide usage stats
+                }
+        
+        except Exception as e:
+            logger.error(f"Error in agent chat: {e}")
+            error_msg = str(e)
+            if "Client disconnected" in error_msg:
+                error_msg = "The response took too long. Try asking a shorter question."
+            
+            if streaming:
+                yield f"Error: {error_msg}"
+            else:
+                yield {
+                    "content": f"Error: {error_msg}",
+                    "model": self.model_name,
+                    "error": True
+                }
+    
+    def clear_memory(self):
+        """Clear the conversation memory"""
+        self.memory.clear()
+
+# Example usage of tools
+def create_default_tools() -> List[Tool]:
+    """Create default tools for the agent"""
+    return [
+        Tool(
+            name="search",
+            func=lambda x: f"Search results for: {x}",
+            description="Search for information on a topic"
+        ),
+        Tool(
+            name="calculator",
+            func=lambda x: str(eval(x)),
+            description="Perform mathematical calculations"
+        )
+    ]
+
 async def chat_with_ai(
     message: str,
     history: List[Dict[str, str]] = None,
     model: Optional[str] = None,
     system_prompt: Optional[str] = None,
+    streaming: bool = False,
+    use_agent: bool = False,
+    tools: Optional[List[Tool]] = None
 ):
     """
     Process a chat message with AI.
@@ -741,129 +964,127 @@ async def chat_with_ai(
         history: Previous conversation history (list of role/content pairs)
         model: Optional model override
         system_prompt: Optional system prompt override
+        streaming: Whether to use streaming response
+        use_agent: Whether to use LangChain agent
+        tools: Optional list of tools for the agent
         
     Returns:
-        Dict: AI response with content, model used, etc.
+        If streaming=False: Dict containing AI response with content, model used, etc.
+        If streaming=True: Yields streaming chunks of the AI response or stats data
     """
-    # Default system prompt if none provided
-    if system_prompt is None:
-        system_prompt = """You are a helpful AI assistant. 
-        Provide clear, concise, and accurate responses to the user's questions.     "usage": response.usage
-        Be friendly and conversational in your replies."""
-    
-    # Initialize message list with system prompt
-    messages = [AIMessage(role="system", content=system_prompt)]
-    
-    # Add conversation history if provided
-    if history:
-        for msg in history:
-            if msg["role"] in ["user", "assistant", "system"]:
-                messages.append(AIMessage(role=msg["role"], content=msg["content"]))
-    
-    # Add current message
-    messages.append(AIMessage(role="user", content=message))
-    
-    # Create request
-    request = AIRequest(
-        messages=messages,
-        model=model,
-        temperature=0.7,
-        max_tokens=2000  # Larger context for chat
-    )
-    try:
-        # Query the AI with retry logic
-        response = await query_lm_studio(request)
-        """
-        return {
-            "content": response.content,
-            "model": response.model,
-            "usage": response.usage
-        }
-        """
-    except Exception as e:
-        logger.error(f"Error in chat: {e}")
-        error_msg = str(e)
-        if "Client disconnected" in error_msg:
-            error_msg = "The response took too long. Try asking a shorter question."
+    if use_agent:
+        # Create agent instance
+        agent = LangChainAgent(
+            model_name=model or AI_MODEL,
+            system_prompt=system_prompt,
+            tools=tools or create_default_tools()
+        )
         
-        return {
-            "content": f"Error: {error_msg}",
-            "model": model or AI_MODEL,
-            "error": True
-        }
-
-
-async def chat_with_ai_stream(
-    message: str,
-    history: List[Dict[str, str]] = None,
-    model: Optional[str] = None,
-    system_prompt: Optional[str] = None,
-):
-    """chat
-    Process a chat message with AI using streaming response.
-    
-    Args:
-        message: The current user message
-        history: Previous conversation history (list of role/content pairs)
-        model: Optional model override
-        system_prompt: Optional system prompt override
+        # Use agent for chat
+        if streaming:
+            async for response in agent.chat(message, streaming=True):
+                yield response
+        else:
+            response = await agent.chat(message, streaming=False)
+            yield response
+    else:
+        # Use original chat implementation
+        # Default system prompt if none provided
+        if system_prompt is None:
+            system_prompt = """You are a helpful AI assistant. 
+            You can structure your responses using <think>...</think> tags to show your reasoning process.
+            Think step by step and provide a detailed response.
+            Just list pipeline steps and don't be too detailed.
+            For example:    
+            <think>
+            The user is asking about... Let me consider this carefully...
+            </think>
+            
+            Then provide your main response after the think section.
+            
+            You have to use Latex to show mathematical expressions. When using LaTeX for mathematical expressions, follow these guidelines:
+            1. For inline math (within a sentence), use \(...\) delimiters:
+               Example: "The formula \(E = mc^2\) is famous."
+            
+            2. For display math (on its own line), use \[...\] delimiters:
+               Example: "The quadratic formula is:
+               \[
+               x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+               \]"
+            
+            3. For matrices and other environments, use \[...\] with the appropriate environment:
+               Example: "The matrix A is:
+               \[
+               \begin{bmatrix}
+               a_{11} & a_{12} \\
+               a_{21} & a_{22}
+               \end{bmatrix}
+               \]"
+            
+            4. For code blocks containing LaTeX, use the latex language identifier:
+               ```latex
+               \begin{bmatrix}
+               a_{11} & a_{12} \\
+               a_{21} & a_{22}
+               \end{bmatrix}
+               ```
+            
+            Provide clear, concise, and accurate responses to the user's questions like:
+            1. Overview of the topic
+            2. Key points or steps
+            ...
+            Be friendly and conversational in your replies.
+            You should use Markdown formatting in your responses, including headers, bulleted lists, tables using the GFM (GitHub Flavored Markdown) syntax.
+            Finally, provide a conclusion or summary of your response."""
         
-    Yields:
-        str or dict: Streaming chunks of the AI response or stats data
-    """
-    # Default system prompt if none provided
-    if system_prompt is None:
-        system_prompt = """You are a helpful AI assistant. 
-        You can structure your responses using <think>...</think> tags to show your reasoning process. It don't need to be used mardown formatting.
-        For example:    
-        <think>
-        The user is asking about... Let me consider this carefully...
-        </think>
+        # Initialize message list with system prompt
+        messages = [AIMessage(role="system", content=system_prompt)]
         
-        Then provide your main response after the think section.
+        # Add conversation history if provided
+        if history:
+            for msg in history:
+                if msg["role"] in ["user", "assistant", "system"]:
+                    messages.append(AIMessage(role=msg["role"], content=msg["content"]))
         
-        Provide clear, concise, and accurate responses to the user's questions like:
-        1. Overview of the topic
-        2. Key points or steps
-        ...
-        Be friendly and conversational in your replies.
-        You should use Markdown formatting in your responses, including headers, bulleted list,tables using the GFM (GitHub Flavored Markdown) syntax.
-        Finally, provide a conclusion or summary of your response.
-        """
-    
-    # Initialize message list with system prompt
-    messages = [AIMessage(role="system", content=system_prompt)]
-    
-    # Add conversation history if provided
-    if history:
-        for msg in history:
-            if msg["role"] in ["user", "assistant", "system"]:
-                messages.append(AIMessage(role=msg["role"], content=msg["content"]))
-    
-    # Add current message
-    messages.append(AIMessage(role="user", content=message))
-    
-    # Create request
-    request = AIRequest(
-        messages=messages,
-        model=model,
-        temperature=0.7,
-        max_tokens=2000  # Larger context for chat
-    )
-    
-    try:
-        # Stream the AI response
-        async for chunk in query_lm_studio_stream(request):
-            # Check if this is a stats message (JSON string)
-            if chunk.startswith('{"type":"stats"'):
-                yield chunk  # Pass through the stats data
+        # Add current message
+        messages.append(AIMessage(role="user", content=message))
+        
+        # Create request
+        request = AIRequest(
+            messages=messages,
+            model=model,
+            temperature=0.7,
+            max_tokens=2000  # Larger context for chat
+        )
+        
+        try:
+            if streaming:
+                # Stream the AI response
+                collected_content = ""
+                async for chunk in query_lm_studio_stream(request):
+                    # Check if this is a stats message (JSON string)
+                    if chunk.startswith('{"type":"stats"'):
+                        yield chunk  # Pass through the stats data
+                    else:
+                        collected_content += chunk
+                        yield chunk  # Pass through regular content
             else:
-                yield chunk  # Pass through regular content
-    
-    except Exception as e:
-        logger.error(f"Error in streaming chat: {e}")
-        error_msg = str(e)
-        if "Client disconnected" in error_msg:
-            error_msg = "The response took too long. Try asking a shorter question."
+                # Query the AI with retry logic
+                response = await query_lm_studio(request)
+                yield {
+                    "content": response.content,
+                    "model": response.model,
+                    "usage": response.usage
+                }
         
-        yield f"Error: {error_msg}"
+        except Exception as e:
+            logger.error(f"Error in chat: {e}")
+            error_msg = str(e)
+            if "Client disconnected" in error_msg:
+                error_msg = "The response took too long. Try asking a shorter question."
+            
+            yield {
+                "content": f"Error: {error_msg}",
+                "model": model or AI_MODEL,
+                "error": True
+            }

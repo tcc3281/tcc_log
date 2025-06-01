@@ -5,6 +5,9 @@ import ReactMarkdown from 'react-markdown';
 import { Components } from 'react-markdown';
 import { ChatMessage } from '../../lib/ai-utils';
 import remarkGfm from 'remark-gfm';
+import rehypeKatex from 'rehype-katex';
+import remarkMath from 'remark-math';
+import 'katex/dist/katex.min.css';
 import { 
   UserCircleIcon, 
   ComputerDesktopIcon, 
@@ -18,14 +21,158 @@ import {
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 // Use esm version to avoid TypeScript errors
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import katex from 'katex';
 
-// Define our own interface for code component props that works with ReactMarkdown
-interface CodeComponentProps {
-  className?: string;
-  children?: React.ReactNode;
-  node?: any;
-  [key: string]: any;
-}
+// Process LaTeX content before rendering
+// Improved LaTeX content processing function
+// Improved LaTeX content processing function
+// Improved LaTeX content processing function
+const processLatexContent = (content: string): string => {
+  if (!content) return '';
+
+  let processed = content;
+
+  // First, preserve existing properly formatted math expressions
+  const preservedMath: string[] = [];
+  
+  // Preserve display math ($$...$$)
+  processed = processed.replace(/\$\$([^$]+?)\$\$/g, (match, math) => {
+    const index = preservedMath.length;
+    preservedMath.push(match);
+    return `__PRESERVED_DISPLAY_${index}__`;
+  });
+  
+  // Preserve inline math ($...$)
+  processed = processed.replace(/\$([^$\n]+?)\$/g, (match, math) => {
+    const index = preservedMath.length;
+    preservedMath.push(match);
+    return `__PRESERVED_INLINE_${index}__`;
+  });
+
+  // Fix malformed expressions like "A = $\begin{bmatrix}..." (missing closing $)
+  processed = processed.replace(/\$\$\\begin\{([^}]+)\}([^$]*?)\\end\{\1\}(?!\$)/g, (match, env, content) => {
+    const cleanContent = content.replace(/\s*\\\\\s*/g, ' \\\\ ').trim();
+    return `$$\\begin{${env}}${cleanContent}\\end{${env}}$$`;
+  });
+
+  // Convert \[ ... \] to $$ ... $$ (display math)
+  processed = processed.replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (match, math) => {
+    const cleanMath = math
+      .replace(/\s*\\\\\s*/g, ' \\\\ ') // Normalize line breaks
+      .replace(/\s+/g, ' ') // Normalize spaces
+      .trim();
+    return `$$${cleanMath}$$`;
+  });
+
+  // Convert \( ... \) to $ ... $ (inline math)
+  processed = processed.replace(/\\\(\s*([\s\S]*?)\s*\\\)/g, (match, math) => {
+    const cleanMath = math.trim();
+    return `$${cleanMath}$`;
+  });
+
+  // Handle standalone matrix environments that aren't already in math mode
+  processed = processed.replace(/(?<!\$)\\begin\{([^}]+)\}([\s\S]*?)\\end\{\1\}(?!\$)/g, (match, env, content) => {
+    const cleanContent = content
+      .replace(/\s*\\\\\s*/g, ' \\\\ ') // Normalize line breaks
+      .replace(/\s+/g, ' ') // Normalize spaces
+      .trim();
+    return `$$\\begin{${env}}${cleanContent}\\end{${env}}$$`;
+  });
+
+  // Handle complex expressions with \frac that contain matrix environments
+  processed = processed.replace(/\\frac\{([^}]+)\}\{([^}]+)\}\s*\\begin\{([^}]+)\}([\s\S]*?)\\end\{\3\}/g, (match, num, den, env, content) => {
+    const cleanContent = content
+      .replace(/\s*\\\\\s*/g, ' \\\\ ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return `$$\\frac{${num}}{${den}} \\begin{${env}}${cleanContent}\\end{${env}}$$`;
+  });
+
+  // Clean up whitespace around math delimiters
+  processed = processed.replace(/\$\s+/g, '$');
+  processed = processed.replace(/\s+\$/g, '$');
+  processed = processed.replace(/\$\$\s+/g, '$$');
+  processed = processed.replace(/\s+\$\$/g, '$$');
+
+  // Restore preserved math expressions
+  preservedMath.forEach((math, index) => {
+    processed = processed.replace(`__PRESERVED_DISPLAY_${index}__`, math);
+    processed = processed.replace(`__PRESERVED_INLINE_${index}__`, math);
+  });
+
+  // Final cleanup - normalize multiple dollar signs to display math
+  processed = processed.replace(/\$\$\$+/g, '$$');
+
+  return processed;
+};
+
+// Custom math component
+const MathComponent = ({ math, display }: { math: string; display: boolean }) => {
+  const Delimiter = display ? '$$' : '$';
+  return <span>{`${Delimiter}${math}${Delimiter}`}</span>;
+};
+
+// Configure markdown components
+const markdownComponents: Components = {
+  code({ node, className, children, ...props }) {
+    const match = /language-(\w+)/.exec(className || '');
+    const isInline = !match;
+    const content = String(children).replace(/\n$/, '');
+    
+    // Check if this is a LaTeX code block
+    if (match && match[1] === 'latex') {
+      // Process the LaTeX content
+      const processedContent = processLatexContent(content);
+      
+      return (
+        <div className="my-4">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[rehypeKatex]}
+            components={{
+              // Override code component to prevent double rendering
+              code: ({ node, ...props }) => <span {...props} />,
+              // Override paragraph to handle math blocks
+              p: ({ node, children, ...props }) => {
+                const content = React.Children.toArray(children).join('');
+                if (content.startsWith('$$') && content.endsWith('$$')) {
+                  return <div className="math-block overflow-x-auto" {...props}>{children}</div>;
+                }
+                return <p {...props}>{children}</p>;
+              }
+            }}
+          >
+            {processedContent}
+          </ReactMarkdown>
+        </div>
+      );
+    }
+    
+    return !isInline ? (
+      <SyntaxHighlighter
+        style={vscDarkPlus as any}
+        language={match ? match[1] : 'text'}
+        PreTag="div"
+        className="rounded"
+        {...props}
+      >
+        {content}
+      </SyntaxHighlighter>
+    ) : (
+      <code className={`${className} bg-gray-200 dark:bg-gray-800 px-1 py-0.5 rounded text-sm`} {...props}>
+        {children}
+      </code>
+    );
+  },
+  // Add paragraph component to handle math blocks in both think and response
+  p: ({ node, children, ...props }) => {
+    const content = React.Children.toArray(children).join('');
+    if (content.startsWith('$$') && content.endsWith('$$')) {
+      return <div className="math-block overflow-x-auto" {...props}>{children}</div>;
+    }
+    return <p {...props}>{children}</p>;
+  }
+};
 
 interface ChatMessageDisplayProps {
   message: ChatMessage;
@@ -41,11 +188,12 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
   const [showThinking, setShowThinking] = useState(false);
   const [copyStatus, setCopyStatus] = useState<Record<string, 'idle' | 'copied'>>({
     user: 'idle',
-    assistant: 'idle'
+    assistant: 'idle',
+    think: 'idle'
   });
 
   // Handle copy button click
-  const handleCopy = (text: string, role: 'user' | 'assistant') => {
+  const handleCopy = (text: string, role: 'user' | 'assistant' | 'think') => {
     navigator.clipboard.writeText(text).then(() => {
       setCopyStatus(prev => ({ ...prev, [role]: 'copied' }));
       setTimeout(() => setCopyStatus(prev => ({ ...prev, [role]: 'idle' })), 2000);
@@ -55,6 +203,9 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
   // Format stats for display
   const formatStats = () => {
     if (!message.inference_time && !message.tokens_per_second) return null;
+
+    // Estimate total tokens based on content length (approximate)
+    const totalTokens = Math.round((message.content?.length || 0) / 4);
 
     return (
       <div className="flex items-center gap-2">
@@ -69,6 +220,8 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
           <div className="flex items-center">
             <BoltIcon className="h-3 w-3 mr-1 text-gray-400" />
             <span>{message.tokens_per_second.toFixed(1)} t/s</span>
+            <span className="mx-1">|</span>
+            <span>{totalTokens} tokens</span>
           </div>
         )}
       </div>
@@ -97,28 +250,9 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
 
   const isUser = message.role === 'user';
 
-  // Configure ReactMarkdown components
-  const markdownComponents: Components = {
-    code({ node, className, children, ...props }) {
-      const match = /language-(\w+)/.exec(className || '');
-      const isInline = !match;
-      return !isInline ? (
-        <SyntaxHighlighter
-          style={vscDarkPlus as any}
-          language={match ? match[1] : 'text'}
-          PreTag="div"
-          className="rounded"
-          {...props}
-        >
-          {String(children).replace(/\n$/, '')}
-        </SyntaxHighlighter>
-      ) : (
-        <code className={`${className} bg-gray-200 dark:bg-gray-800 px-1 py-0.5 rounded text-sm`} {...props}>
-          {children}
-        </code>
-      );
-    }
-  };
+  // Process content with LaTeX
+  const processedContent = processLatexContent(message.content);
+  const processedThink = message.think ? processLatexContent(message.think) : '';
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
@@ -156,16 +290,32 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
                     )}
                     Thinking process
                   </span>
-                  {/* Removed the Show/Hide text but kept the collapsible functionality */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCopy(message.think || '', 'think');
+                    }}
+                    className="flex items-center hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                    title="Copy thinking process"
+                    aria-label="Copy thinking process"
+                  >
+                    {copyStatus.think === 'copied' ? (
+                      <CheckIcon className="h-3 w-3 mr-1 text-green-500" />
+                    ) : (
+                      <ClipboardIcon className="h-3 w-3 mr-1" />
+                    )}
+                    <span className="text-xs">{copyStatus.think === 'copied' ? "Copied" : "Copy"}</span>
+                  </button>
                 </div>
                 
                 {showThinking && (
                   <div className="p-2 bg-gray-100 dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm">
                     <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
+                      remarkPlugins={[remarkGfm, remarkMath]}
+                      rehypePlugins={[rehypeKatex]}
                       components={markdownComponents}
                     >
-                      {message.think}
+                      {processedThink}
                     </ReactMarkdown>
                   </div>
                 )}
@@ -175,10 +325,11 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
             {/* Main Content */}
             {message.content ? (
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex]}
                 components={markdownComponents}
               >
-                {message.content}
+                {processedContent}
               </ReactMarkdown>
             ) : (
               isStreaming && (
@@ -242,3 +393,4 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
 };
 
 export default ChatMessageDisplay;
+
