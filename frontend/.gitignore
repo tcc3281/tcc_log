@@ -42,4 +42,4 @@ next-env.d.ts
 
 DATABASE_URL=postgresql://postgres:Mayyeutao0?@localhost:5432/postgres
 SECRET_KEY=your-secret-key
-ACCESS_TOKEN_EXPIRE_MINUTES=30
+ACCESS_TOKEN_EXPIRE_MINUTES=60
