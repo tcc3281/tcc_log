@@ -129,7 +129,8 @@ async def chat(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Message cannot be empty"
             )
-          # Convert history to the format expected by lm_studio
+        
+        # Convert history to the format expected by lm_studio
         history = None
         if request.history:
             history = [
@@ -138,14 +139,15 @@ async def chat(
             ]
         
         # Process chat message
-        chat_response = await lm_studio.chat_with_ai(
+        async for response in lm_studio.chat_with_ai(
             message=request.message,
             history=history,
             model=request.model,
-            system_prompt=request.system_prompt
-        )
-        
-        return chat_response
+            system_prompt=request.system_prompt,
+            streaming=False
+        ):
+            return response
+            
     except HTTPException:
         raise
     except Exception as e:
@@ -367,11 +369,12 @@ async def chat_with_ai_stream(
                 sent_data = []  # Track data sent to client for later reference
                 content_buffer = ""  # Buffer to detect and remove stats from content
                 
-                async for chunk in lm_studio.chat_with_ai_stream(
+                async for chunk in lm_studio.chat_with_ai(
                     message=request.message,
                     history=history,
                     model=request.model,
-                    system_prompt=request.system_prompt
+                    system_prompt=request.system_prompt,
+                    streaming=True
                 ):
                     chunk_id += 1
                     
@@ -390,7 +393,7 @@ async def chat_with_ai_stream(
                             pass
                     
                     # Process regular content
-                    content = chunk  # chunk is already a string from chat_with_ai_stream
+                    content = chunk  # chunk is already a string from chat_with_ai
                     
                     # Check if the content contains a stats JSON object at the end
                     stats_index = content.find('{"type":"stats"')

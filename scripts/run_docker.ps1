@@ -5,9 +5,9 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "Warning: Failed to stop containers, continuing..." -ForegroundColor Yellow
 }
 
-# Build the images with no cache to ensure fresh builds
+# Build the images using cache to save disk space and build time
 Write-Host "Building Docker images..." -ForegroundColor Green
-docker-compose build --no-cache
+docker-compose build
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Error: Failed to build Docker images" -ForegroundColor Red
     exit 1
