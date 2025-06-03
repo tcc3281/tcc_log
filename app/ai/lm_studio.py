@@ -40,11 +40,15 @@ LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", DEFAULT_LM_STUDIO_BASE_URL)
 AI_MODEL = os.getenv("LM_STUDIO_MODEL", DEFAULT_AI_MODEL)
 MAX_INFERENCE_TIME = int(os.getenv("LM_MAX_INFERENCE_TIME", DEFAULT_MAX_INFERENCE_TIME))
 
+# Global ChatOpenAI instance for reuse
+_chatopen_ai_instance = None
+_available_models_cache = None
+_cache_timestamp = 0
+
 class AIMessage(BaseModel):
     """Structure for AI message content"""
     role: str  # "system", "user", or "assistant"
     content: str
-
 
 class AIRequest(BaseModel):
     """Structure for AI request with messages and parameters"""
@@ -53,7 +57,6 @@ class AIRequest(BaseModel):
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
     tools: Optional[List[Dict[str, Any]]] = None
-
 
 class AIResponse(BaseModel):
     """Structure for AI response"""
@@ -64,102 +67,55 @@ class AIResponse(BaseModel):
     time_to_first_token: Optional[float] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
 
-
 class ParsedAIResponse(BaseModel):
     """Structure for parsed AI response with think and answer sections"""
     think: Optional[str] = None
     answer: str
     raw_content: str
 
+# Common system prompts
+SYSTEM_PROMPTS = {
+    "default_chat": """You are a helpful AI assistant. 
+You can structure your responses using <think>...</think> tags to show your reasoning process.
+Think step by step and provide a detailed response.
+Just list pipeline steps and don't be too detailed.
+For example:    
+<think>
+The user is asking about... Let me consider this carefully...
+</think>
 
-def parse_ai_response(content: str) -> ParsedAIResponse:
-    """
-    Parse AI response to separate think and answer sections
-    
-    Args:
-        content: Raw AI response content
-        
-    Returns:
-        ParsedAIResponse: Structured response with think and answer sections
-    """
-    # Log the raw content for debugging
-    logger.debug(f"Parsing AI response - raw content sample: {content[:200]}...")
-    
-    # Pattern to match <think>...</think> sections
-    think_pattern = r'<think>\s*(.*?)\s*</think>'
-    
-    # Find think section
-    think_match = re.search(think_pattern, content, re.DOTALL | re.IGNORECASE)
-    
-    if think_match:
-        think_content = think_match.group(1).strip()
-        logger.debug(f"Found think section: {think_content[:50]}...")
-        # Remove the think section from the content to get the answer
-        answer_content = re.sub(think_pattern, '', content, flags=re.DOTALL | re.IGNORECASE).strip()
-    else:
-        logger.debug("No think section found in response")
-        think_content = None
-        answer_content = content.strip()
-    
-    # Create response object
-    parsed_response = ParsedAIResponse(
-        think=think_content,
-        answer=answer_content,
-        raw_content=content
-    )
-    
-    # Log for debugging
-    logger.debug(f"Parsed AI response - has think: {think_content is not None}, answer length: {len(answer_content)}")
-    
-    return parsed_response
+Then provide your main response after the think section.
 
+You have to use Latex to show mathematical expressions. When using LaTeX for mathematical expressions, follow these guidelines:
+1. For inline math (within a sentence), use \\(...\\) delimiters:
+   Example: "The formula \\(E = mc^2\\) is famous."
 
-async def query_lm_studio(request: AIRequest, max_retries: int = 3) -> AIResponse:
-    """
-    Query LM Studio with retry logic using LangChain
-    """
-    retry_count = 0
-    last_error = None
-    
-    # Set timeout based on environment configuration - convert from milliseconds to seconds
-    timeout = MAX_INFERENCE_TIME / 1000
-    logger.debug(f"Using query timeout of {timeout} seconds (from config: {MAX_INFERENCE_TIME}ms)")
-    
-    while retry_count < max_retries:
-        try:
-            response = await _query_lm_studio_internal(request, timeout=timeout)
-            return response
-        except Exception as e:
-            last_error = e
-            if "Client disconnected" in str(e):
-                logger.warning(f"LM Studio disconnected (attempt {retry_count + 1}/{max_retries}), retrying...")
-                retry_count += 1
-                await asyncio.sleep(1)  # Wait 1 second before retry
-            else:
-                raise e
-    
-    raise last_error
+2. For display math (on its own line), use \\[...\\] delimiters:
+   Example: "The quadratic formula is:
+   \\[
+   x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}
+   \\]"
 
+3. For matrices and other environments, use \\[...\\] with the appropriate environment:
+   Example: "The matrix A is:
+   \\[
+   \\begin{bmatrix}
+   a_{11} & a_{12} \\\\
+   a_{21} & a_{22}
+   \\end{bmatrix}
+   \\]"
 
-async def analyze_journal_entry(
-    entry_title: str, 
-    entry_content: str, 
-    analysis_type: str = "general", 
-    model: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Analyze a journal entry using the AI model.
-    
-    Args:
-        entry_title: The title of the journal entry
-        entry_content: The content of the journal entry
-        analysis_type: Type of analysis to perform: general, mood, summary
-        model: Optional model override
-        
-    Returns:
-        Dict: Analysis result with think, answer, and raw content
-    """    # Define system prompts based on analysis type
-    system_prompts = {
+If there are compared requirement, create table with markdown to compare between objects.
+Bold the key word in the answer.
+Provide clear, concise, and accurate responses to the user's questions like:
+1. Overview of the topic
+2. Key points or steps
+...
+Be friendly and conversational in your replies.
+You should use Markdown formatting in your responses, including headers, bulleted lists, tables using the GFM (GitHub Flavored Markdown) syntax.
+Finally, provide a conclusion or summary of your response.""",
+
+    "journal_analysis": {
         "general": """Analyze this journal entry briefly. Focus on key themes and main points.
                      Keep your response under 200 words.
                      
@@ -207,82 +163,9 @@ async def analyze_journal_entry(
                       
                       Key insights:
                       [Your final response]"""
-    }
-    
-    # Define max tokens for each analysis type
-    max_tokens_map = {
-        "general": 800,
-        "mood": 800,
-        "summary": 600,
-        "insights": 700
-    }
-    
-    # Get appropriate prompt and max tokens
-    system_prompt = system_prompts.get(analysis_type, system_prompts["general"])
-    max_tokens = max_tokens_map.get(analysis_type, 800)
-    
-    # Prepare messages for the AI
-    messages = [
-        AIMessage(role="system", content=system_prompt),
-        AIMessage(
-            role="user", 
-            content=f"Journal title: {entry_title}\n\nJournal content:\n{entry_content}"
-        )
-    ]
-    
-    # Create request
-    request = AIRequest(
-        messages=messages,
-        model=model,
-        temperature=0.7,
-        max_tokens=max_tokens
-    )
-    
-    try:
-        # Query the AI with retry logic
-        response = await query_lm_studio(request)
-        
-        # Parse the response to separate think and answer
-        parsed_response = parse_ai_response(response.content)
-        
-        return {
-            "think": parsed_response.think,
-            "answer": parsed_response.answer,
-            "raw_content": parsed_response.raw_content,
-            "analysis_type": analysis_type
-        }
-    except Exception as e:
-        logger.error(f"Error analyzing journal entry: {e}")
-        error_msg = str(e)
-        if "Client disconnected" in error_msg:
-            error_msg = "Analysis took too long. Try a shorter entry or different analysis type."
-        
-        return {
-            "think": None,
-            "answer": error_msg,
-            "raw_content": error_msg,
-            "analysis_type": analysis_type
-        }
+    },
 
-
-async def improve_writing(
-    text: str,
-    improvement_type: str = "grammar",
-    model: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Improve the writing quality of English text.
-    
-    Args:
-        text: The English text to improve
-        improvement_type: Type of improvement: grammar, style, vocabulary, complete
-        model: Optional model override
-        
-    Returns:
-        Dict: Improved text with think, answer, and raw content
-    """
-    # Define system prompts for different improvement types
-    system_prompts = {
+    "writing_improvement": {
         "grammar": """You are an expert English grammar editor. Your task is to correct grammar mistakes, fix punctuation, and ensure proper sentence structure while preserving the original meaning and tone. Only make necessary corrections without changing the writing style.""",
         
         "style": """You are a professional writing coach. Improve the writing style to make it more engaging, clear, and natural. Enhance sentence flow, vary sentence length, and improve transitions while maintaining the author's voice and message.""",
@@ -297,67 +180,9 @@ async def improve_writing(
 5. Ensuring clarity and coherence
 
 Maintain the original meaning, tone, and personal voice while making it significantly better."""
-    }
-    
-    # Get appropriate prompt
-    system_prompt = system_prompts.get(improvement_type, system_prompts["complete"])
-    
-    # Prepare messages
-    messages = [
-        AIMessage(role="system", content=system_prompt),
-        AIMessage(role="user", content=f"Please improve this text:\n\n{text}")
-    ]
-    
-    # Create request
-    request = AIRequest(
-        messages=messages,
-        model=model,
-        temperature=0.3,  # Lower temperature for more consistent improvements
-        max_tokens=1500
-    )
-    
-    try:
-        # Query the AI
-        response = await query_lm_studio(request)
-        
-        # Parse the response to separate think and answer
-        parsed_response = parse_ai_response(response.content)
-        
-        return {
-            "think": parsed_response.think,
-            "answer": parsed_response.answer,
-            "raw_content": parsed_response.raw_content,
-            "improvement_type": improvement_type,
-            "original_text": text
-        }
-    except Exception as e:
-        logger.error(f"Error improving writing: {e}")
-        return {
-            "think": None,
-            "answer": f"Error improving text: {str(e)}",
-            "raw_content": f"Error improving text: {str(e)}",
-            "improvement_type": improvement_type,
-            "original_text": text
-        }
+    },
 
-
-async def suggest_writing_improvements(
-    text: str,
-    model: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Provide detailed writing improvement suggestions for English text.
-    
-    Args:
-        text: The English text to analyze
-        model: Optional model override
-        
-    Returns:
-        Dict containing different types of suggestions with think and answer sections
-    """
-    logger.debug(f"suggest_writing_improvements called with model: {model}")
-    
-    system_prompt = """You are an expert English writing tutor. Analyze the provided text and give specific, actionable feedback in these categories:
+    "writing_suggestions": """You are an expert English writing tutor. Analyze the provided text and give specific, actionable feedback in these categories:
 
 1. Grammar & Mechanics: Point out specific grammar errors, punctuation issues, or spelling mistakes
 2. Vocabulary & Word Choice: Suggest better word choices or identify repetitive/weak words
@@ -377,115 +202,89 @@ Format your response as:
 **Content & Clarity:**
 [Your feedback here]
 
-Be specific and constructive in your feedback."""
+Be specific and constructive in your feedback.""",
+
+    "journaling_prompts": """You are a creative assistant specialized in journaling. 
+                           Create engaging, thoughtful and inspiring journaling prompts.
+                           Respond with a list of prompts, each prompt on a new line, starting with a bullet point (-)."""
+}
+
+# Token limits for different analysis types
+ANALYSIS_MAX_TOKENS = {
+    "general": 800,
+    "mood": 800,
+    "summary": 600,
+    "insights": 700
+}
+
+def get_chatopen_ai_instance(model: str = None, temperature: float = None, max_tokens: int = None) -> ChatOpenAI:
+    """Get a reusable ChatOpenAI instance"""
+    global _chatopen_ai_instance
     
-    messages = [
-        AIMessage(role="system", content=system_prompt),
-        AIMessage(role="user", content=f"Please analyze and provide improvement suggestions for this text:\n\n{text}")
-    ]
+    # Use defaults if not provided
+    model = model or AI_MODEL
+    temperature = temperature if temperature is not None else DEFAULT_TEMPERATURE
+    max_tokens = max_tokens or DEFAULT_MAX_TOKENS
+    timeout = MAX_INFERENCE_TIME / 1000
     
-    request = AIRequest(
-        messages=messages,
-        model=model,
-        temperature=0.4,
-        max_tokens=1000
+    # Create new instance if none exists or parameters changed
+    if (_chatopen_ai_instance is None or 
+        _chatopen_ai_instance.model_name != model or 
+        _chatopen_ai_instance.temperature != temperature or
+        _chatopen_ai_instance.max_tokens != max_tokens):
+        
+        _chatopen_ai_instance = ChatOpenAI(
+            base_url=LM_STUDIO_BASE_URL,
+            api_key="not-needed",
+            model_name=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout
+        )
+    
+    return _chatopen_ai_instance
+
+def parse_ai_response(content: str) -> ParsedAIResponse:
+    """Parse AI response to separate think and answer sections"""
+    logger.debug(f"Parsing AI response - raw content sample: {content[:200]}...")
+    
+    # Pattern to match <think>...</think> sections
+    think_pattern = r'<think>\s*(.*?)\s*</think>'
+    
+    # Find think section
+    think_match = re.search(think_pattern, content, re.DOTALL | re.IGNORECASE)
+    
+    if think_match:
+        think_content = think_match.group(1).strip()
+        logger.debug(f"Found think section: {think_content[:50]}...")
+        # Remove the think section from the content to get the answer
+        answer_content = re.sub(think_pattern, '', content, flags=re.DOTALL | re.IGNORECASE).strip()
+    else:
+        logger.debug("No think section found in response")
+        think_content = None
+        answer_content = content.strip()
+    
+    # Create response object
+    parsed_response = ParsedAIResponse(
+        think=think_content,
+        answer=answer_content,
+        raw_content=content
     )
     
-    try:
-        response = await query_lm_studio(request)
-        
-        # Parse the response to separate think and answer
-        parsed_response = parse_ai_response(response.content)
-        
-        return {
-            "think": parsed_response.think,
-            "answer": parsed_response.answer,
-            "raw_content": parsed_response.raw_content,
-            "original_text": text
-        }
-    except Exception as e:
-        logger.error(f"Error getting writing suggestions: {e}")
-        return {
-            "think": None,
-            "answer": f"Error analyzing text: {str(e)}",
-            "raw_content": f"Error analyzing text: {str(e)}",
-            "original_text": text
-        }
-
-
-async def generate_journaling_prompts(
-    topic: str = "",
-    theme: str = "",
-    count: int = 5,
-    model: Optional[str] = None
-) -> List[str]:
-    """
-    Generate journaling prompts using the AI model.
+    logger.debug(f"Parsed AI response - has think: {think_content is not None}, answer length: {len(answer_content)}")
     
-    Args:
-        topic: Optional topic for the prompts
-        theme: Optional theme for the prompts
-        count: Number of prompts to generate (default: 5)
-        model: Optional model override
-        
-    Returns:
-        List[str]: List of generated prompts
-    """
-    # Construct base prompt
-    base_content = f"Generate {count} journaling prompts"
-    if topic:
-        base_content += f" about {topic}"
-    if theme:
-        base_content += f" with theme {theme}"
-    
-    # Prepare system message
-    system_message = """You are a creative assistant specialized in journaling. 
-                       Create engaging, thoughtful and inspiring journaling prompts.
-                       Respond with a list of prompts, each prompt on a new line, starting with a bullet point (-)."""
-    
-    # Prepare messages for the AI
-    messages = [
-        AIMessage(role="system", content=system_message),
-        AIMessage(role="user", content=f"{base_content}.")
-    ]
-    
-    # Create request
-    request = AIRequest(
-        messages=messages,
-        model=model,
-        temperature=0.8,  # Higher temperature for creativity
-        max_tokens=500
-    )
-    
-    try:
-        # Query the AI
-        response = await query_lm_studio(request)
-        
-        # Process response - extract bullet points
-        content = response.content
-        
-        # Split by newlines and extract bullet points
-        lines = content.split('\n')
-        prompts = [line.strip()[2:].strip() if line.strip().startswith('-') else line.strip() 
-                   for line in lines if line.strip()]
-        
-        # Filter out any non-prompt text
-        prompts = [p for p in prompts if len(p) >= 10]  # Only keep substantive prompts
-        
-        # Limit to requested count
-        return prompts[:count]
-    except Exception as e:
-        logger.error(f"Error generating journaling prompts: {e}")
-        return [f"Error generating journaling prompts: {str(e)}"]
-
+    return parsed_response
 
 async def get_available_models() -> List[str]:
-    """
-    Get list of available models from LM Studio
+    """Get list of available models from LM Studio with caching"""
+    global _available_models_cache, _cache_timestamp
+    import time
     
-    Returns:
-        List[str]: List of model IDs
-    """
+    # Cache for 5 minutes
+    current_time = time.time()
+    if _available_models_cache is not None and (current_time - _cache_timestamp) < 300:
+        return _available_models_cache
+    
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(f"{LM_STUDIO_BASE_URL}/models")
@@ -494,57 +293,69 @@ async def get_available_models() -> List[str]:
             models_data = response.json()
             model_ids = [model["id"] for model in models_data.get("data", [])]
             
+            # Update cache
+            _available_models_cache = model_ids
+            _cache_timestamp = current_time
+            
             return model_ids
     except Exception as e:
         logger.error(f"Error fetching available models: {e}")
         return []
 
-
-async def check_ai_service() -> Dict[str, Any]:
-    """
-    Check if LM Studio API is available and return status details
+async def validate_and_get_model(model: Optional[str] = None) -> str:
+    """Validate and get the best available model"""
+    target_model = model or AI_MODEL
     
-    Returns:
-        Dict containing service status information
-    """
-    try:
-        # Check models endpoint as a basic health check
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{LM_STUDIO_BASE_URL}/models")
-            
-            if response.status_code == 200:
-                models_data = response.json()
-                model_count = len(models_data.get("data", []))
-                
-                # Get a sample model if available
-                sample_model = models_data.get("data", [{}])[0].get("id", "unknown") if model_count > 0 else "none"
-                
-                return {
-                    "status": "available",
-                    "message": "LM Studio API is available",
-                    "base_url": LM_STUDIO_BASE_URL,
-                    "model_count": model_count,
-                    "sample_model": sample_model
-                }
+    # If model is placeholder or invalid, get the first available model
+    if target_model == "your-model-identifier" or not target_model or target_model == DEFAULT_AI_MODEL:
+        try:
+            available_models = await get_available_models()
+            if available_models:
+                # Use the first available model that's not an embedding model
+                for available_model in available_models:
+                    if "embedding" not in available_model.lower():
+                        target_model = available_model
+                        break
+                if not target_model or target_model == "your-model-identifier":
+                    target_model = available_models[0]  # Fallback to first model
+                logger.info(f"Auto-selected model: {target_model}")
             else:
-                return {
-                    "status": "error",
-                    "message": f"LM Studio API returned status code {response.status_code}",
-                    "base_url": LM_STUDIO_BASE_URL
-                }
-    except Exception as e:
-        return {
-            "status": "unavailable",
-            "message": f"Could not connect to LM Studio API: {str(e)}",
-            "base_url": LM_STUDIO_BASE_URL
-        }
+                logger.warning("No models available in LM Studio")
+        except Exception as e:
+            logger.warning(f"Could not get available models: {e}, using configured model: {target_model}")
+    
+    return target_model
 
+async def create_ai_request(
+    content: str,
+    system_prompt: str,
+    model: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    history: Optional[List[Dict[str, str]]] = None
+) -> AIRequest:
+    """Create a standardized AI request"""
+    messages = [AIMessage(role="system", content=system_prompt)]
+    
+    # Add conversation history if provided
+    if history:
+        for msg in history:
+            if msg["role"] in ["user", "assistant", "system"]:
+                messages.append(AIMessage(role=msg["role"], content=msg["content"]))
+    
+    # Add current message
+    messages.append(AIMessage(role="user", content=content))
+    
+    return AIRequest(
+        messages=messages,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens
+    )
 
-async def _query_lm_studio_internal(request: AIRequest, timeout: float = None) -> AIResponse:
-    """
-    Internal function to send a request to LM Studio API using LangChain
-    """
-    model = request.model or AI_MODEL
+async def query_lm_studio_internal(request: AIRequest, timeout: float = None) -> AIResponse:
+    """Internal function to send a request to LM Studio API using LangChain"""
+    model = await validate_and_get_model(request.model)
     temperature = request.temperature or DEFAULT_TEMPERATURE
     max_tokens = request.max_tokens or DEFAULT_MAX_TOKENS
     
@@ -552,38 +363,13 @@ async def _query_lm_studio_internal(request: AIRequest, timeout: float = None) -
     if timeout is None:
         timeout = MAX_INFERENCE_TIME / 1000
     
-    # If model is placeholder or invalid, get the first available model
-    if model == "your-model-identifier" or not model or model == DEFAULT_AI_MODEL:
-        try:
-            available_models = await get_available_models()
-            if available_models:
-                # Use the first available model that's not an embedding model
-                for available_model in available_models:
-                    if "embedding" not in available_model.lower():
-                        model = available_model
-                        break
-                if not model or model == "your-model-identifier":
-                    model = available_models[0]  # Fallback to first model
-                logger.info(f"Auto-selected model: {model}")
-            else:
-                logger.warning("No models available in LM Studio")
-        except Exception as e:
-            logger.warning(f"Could not get available models: {e}, using configured model: {model}")
-    
     # Log request details
     logger.info(f"Querying LM Studio with model: {model}")
     logger.debug(f"Request parameters: temp={temperature}, max_tokens={max_tokens}")
     logger.debug(f"Message count: {len(request.messages)}")
     
-    # Set up LangChain model with specific parameters for this request
-    llm = ChatOpenAI(
-        base_url=LM_STUDIO_BASE_URL,
-        api_key="not-needed",
-        model_name=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        timeout=timeout  # Apply the timeout in seconds
-    )
+    # Get LangChain model instance
+    llm = get_chatopen_ai_instance(model, temperature, max_tokens)
     
     # Convert our AIMessage objects to LangChain message objects
     langchain_messages = []
@@ -627,17 +413,220 @@ async def _query_lm_studio_internal(request: AIRequest, timeout: float = None) -
         logger.error(f"Error querying LM Studio API: {e}")
         raise
 
+async def query_lm_studio(request: AIRequest, max_retries: int = 3) -> AIResponse:
+    """Query LM Studio with retry logic using LangChain"""
+    retry_count = 0
+    last_error = None
+    
+    # Set timeout based on environment configuration - convert from milliseconds to seconds
+    timeout = MAX_INFERENCE_TIME / 1000
+    logger.debug(f"Using query timeout of {timeout} seconds (from config: {MAX_INFERENCE_TIME}ms)")
+    
+    while retry_count < max_retries:
+        try:
+            response = await query_lm_studio_internal(request, timeout=timeout)
+            return response
+        except Exception as e:
+            last_error = e
+            if "Client disconnected" in str(e):
+                logger.warning(f"LM Studio disconnected (attempt {retry_count + 1}/{max_retries}), retrying...")
+                retry_count += 1
+                await asyncio.sleep(1)  # Wait 1 second before retry
+            else:
+                raise e
+    
+    raise last_error
+
+async def handle_ai_error(e: Exception, task_name: str) -> Dict[str, Any]:
+    """Standardized error handling for AI operations"""
+    logger.error(f"Error in {task_name}: {e}")
+    error_msg = str(e)
+    if "Client disconnected" in error_msg:
+        error_msg = f"{task_name} took too long. Try a shorter input or different settings."
+    
+    return {
+        "think": None,
+        "answer": error_msg,
+        "raw_content": error_msg
+    }
+
+async def process_ai_request(
+    content: str,
+    system_prompt: str,
+    model: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    history: Optional[List[Dict[str, str]]] = None,
+    task_name: str = "AI request"
+) -> Dict[str, Any]:
+    """Generic function to process AI requests with standardized error handling"""
+    try:
+        request = await create_ai_request(
+            content=content,
+            system_prompt=system_prompt,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            history=history
+        )
+        
+        response = await query_lm_studio(request)
+        parsed_response = parse_ai_response(response.content)
+        
+        return {
+            "think": parsed_response.think,
+            "answer": parsed_response.answer,
+            "raw_content": parsed_response.raw_content
+        }
+    except Exception as e:
+        return await handle_ai_error(e, task_name)
+
+# Streamlined specific functions
+async def analyze_journal_entry(
+    entry_title: str, 
+    entry_content: str, 
+    analysis_type: str = "general", 
+    model: Optional[str] = None
+) -> Dict[str, Any]:
+    """Analyze a journal entry using the AI model."""
+    system_prompt = SYSTEM_PROMPTS["journal_analysis"].get(analysis_type, SYSTEM_PROMPTS["journal_analysis"]["general"])
+    max_tokens = ANALYSIS_MAX_TOKENS.get(analysis_type, 800)
+    
+    content = f"Journal title: {entry_title}\n\nJournal content:\n{entry_content}"
+    
+    result = await process_ai_request(
+        content=content,
+        system_prompt=system_prompt,
+        model=model,
+        temperature=0.7,
+        max_tokens=max_tokens,
+        task_name="journal analysis"
+    )
+    
+    result["analysis_type"] = analysis_type
+    return result
+
+async def improve_writing(
+    text: str,
+    improvement_type: str = "grammar",
+    model: Optional[str] = None
+) -> Dict[str, Any]:
+    """Improve the writing quality of English text."""
+    system_prompt = SYSTEM_PROMPTS["writing_improvement"].get(improvement_type, SYSTEM_PROMPTS["writing_improvement"]["complete"])
+    
+    content = f"Please improve this text:\n\n{text}"
+    
+    result = await process_ai_request(
+        content=content,
+        system_prompt=system_prompt,
+        model=model,
+        temperature=0.3,  # Lower temperature for more consistent improvements
+        max_tokens=1500,
+        task_name="writing improvement"
+    )
+    
+    result["improvement_type"] = improvement_type
+    result["original_text"] = text
+    return result
+
+async def suggest_writing_improvements(
+    text: str,
+    model: Optional[str] = None
+) -> Dict[str, Any]:
+    """Provide detailed writing improvement suggestions for English text."""
+    logger.debug(f"suggest_writing_improvements called with model: {model}")
+    
+    content = f"Please analyze and provide improvement suggestions for this text:\n\n{text}"
+    
+    result = await process_ai_request(
+        content=content,
+        system_prompt=SYSTEM_PROMPTS["writing_suggestions"],
+        model=model,
+        temperature=0.4,
+        max_tokens=1000,
+        task_name="writing suggestions"
+    )
+    
+    result["original_text"] = text
+    return result
+
+async def generate_journaling_prompts(
+    topic: str = "",
+    theme: str = "",
+    count: int = 5,
+    model: Optional[str] = None
+) -> List[str]:
+    """Generate journaling prompts using the AI model."""
+    base_content = f"Generate {count} journaling prompts"
+    if topic:
+        base_content += f" about {topic}"
+    if theme:
+        base_content += f" with theme {theme}"
+    base_content += "."
+    
+    try:
+        result = await process_ai_request(
+            content=base_content,
+            system_prompt=SYSTEM_PROMPTS["journaling_prompts"],
+            model=model,
+            temperature=0.8,  # Higher temperature for creativity
+            max_tokens=500,
+            task_name="journaling prompts"
+        )
+        
+        # Process response - extract bullet points
+        content = result["answer"]
+        
+        # Split by newlines and extract bullet points
+        lines = content.split('\n')
+        prompts = [line.strip()[2:].strip() if line.strip().startswith('-') else line.strip() 
+                   for line in lines if line.strip()]
+        
+        # Filter out any non-prompt text
+        prompts = [p for p in prompts if len(p) >= 10]  # Only keep substantive prompts
+        
+        # Limit to requested count
+        return prompts[:count]
+    except Exception as e:
+        logger.error(f"Error generating journaling prompts: {e}")
+        return [f"Error generating journaling prompts: {str(e)}"]
+
+async def check_ai_service() -> Dict[str, Any]:
+    """Check if LM Studio API is available and return status details"""
+    try:
+        # Check models endpoint as a basic health check
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{LM_STUDIO_BASE_URL}/models")
+            
+            if response.status_code == 200:
+                models_data = response.json()
+                model_count = len(models_data.get("data", []))
+                
+                # Get a sample model if available
+                sample_model = models_data.get("data", [{}])[0].get("id", "unknown") if model_count > 0 else "none"
+                
+                return {
+                    "status": "available",
+                    "message": "LM Studio API is available",
+                    "base_url": LM_STUDIO_BASE_URL,
+                    "model_count": model_count,
+                    "sample_model": sample_model
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": f"LM Studio API returned status code {response.status_code}",
+                    "base_url": LM_STUDIO_BASE_URL
+                }
+    except Exception as e:
+        return {
+            "status": "unavailable",
+            "message": f"Could not connect to LM Studio API: {str(e)}",
+            "base_url": LM_STUDIO_BASE_URL
+        }
 
 async def query_lm_studio_stream(request: AIRequest):
-    """
-    Query LM Studio with streaming response using LangChain
-    
-    Args:
-        request: AIRequest object containing messages and parameters
-        
-    Yields:
-        str or dict: Streaming chunks of the response or stats data
-    """
+    """Query LM Studio with streaming response using direct OpenAI client"""
     try:
         import time
         import json
@@ -647,7 +636,7 @@ async def query_lm_studio_stream(request: AIRequest):
         logger.debug(f"Request model: {request.model or AI_MODEL}")
         
         # Set up parameters
-        model = request.model or AI_MODEL
+        model = await validate_and_get_model(request.model)
         temperature = request.temperature if request.temperature is not None else DEFAULT_TEMPERATURE
         max_tokens = request.max_tokens if request.max_tokens is not None else DEFAULT_MAX_TOKENS
         
@@ -706,31 +695,9 @@ async def query_lm_studio_stream(request: AIRequest):
         logger.error(f"Error in streaming query: {str(e)}")
         yield f"Error: {str(e)}"
 
-
-class ConversationMemory:
-    """Class to manage conversation memory"""
-    def __init__(self, max_messages: int = 10):
-        self.max_messages = max_messages
-        self.messages: List[Dict[str, str]] = []
-    
-    def add_message(self, role: str, content: str):
-        """Add a message to memory"""
-        self.messages.append({"role": role, "content": content})
-        # Keep only the last max_messages
-        if len(self.messages) > self.max_messages:
-            self.messages = self.messages[-self.max_messages:]
-    
-    def get_messages(self) -> List[Dict[str, str]]:
-        """Get all messages in memory"""
-        return self.messages
-    
-    def clear(self):
-        """Clear all messages"""
-        self.messages = []
-
-
+# Agent functionality (simplified, keeping only what's actually used)
 class LangChainAgent:
-    """Class to manage LangChain Agent and memory"""
+    """Simplified LangChain Agent class"""
     def __init__(
         self,
         model_name: str = AI_MODEL,
@@ -743,49 +710,7 @@ class LangChainAgent:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.tools = tools or []
-        self.system_prompt = system_prompt or """You are a helpful AI assistant. 
-        You can structure your responses using <think>...</think> tags to show your reasoning process.
-        For example:    
-        <think>
-        The user is asking about... Let me consider this carefully...
-        </think>
-        
-        Then provide your main response after the think section.
-        
-        When using LaTeX for mathematical expressions, follow these guidelines:
-        1. For inline math (within a sentence), use \(...\) delimiters:
-           Example: "The formula \(E = mc^2\) is famous."
-        
-        2. For display math (on its own line), use \[...\] delimiters:
-           Example: "The quadratic formula is:
-           \[
-           x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
-           \]"
-        
-        3. For matrices and other environments, use \[...\] with the appropriate environment:
-           Example: "The matrix A is:
-           \[
-           \begin{bmatrix}
-           a_{11} & a_{12} \\
-           a_{21} & a_{22}
-           \end{bmatrix}
-           \]"
-        
-        4. For code blocks containing LaTeX, use the latex language identifier:
-           ```latex
-           \begin{bmatrix}
-           a_{11} & a_{12} \\
-           a_{21} & a_{22}
-           \end{bmatrix}
-           ```
-        
-        Provide clear, concise, and accurate responses to the user's questions like:
-        1. Overview of the topic
-        2. Key points or steps
-        ...
-        Be friendly and conversational in your replies.
-        You should use Markdown formatting in your responses, including headers, bulleted lists, tables using the GFM (GitHub Flavored Markdown) syntax.
-        Finally, provide a conclusion or summary of your response."""
+        self.system_prompt = system_prompt or SYSTEM_PROMPTS["default_chat"]
         
         # Initialize memory
         self.memory = ConversationBufferMemory(
@@ -794,25 +719,7 @@ class LangChainAgent:
         )
         
         # Initialize LLM
-        self.llm = ChatOpenAI(
-            base_url=LM_STUDIO_BASE_URL,
-            api_key="not-needed",
-            model_name=self.model_name,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            streaming=False
-        )
-        
-        # Initialize streaming LLM
-        self.streaming_llm = ChatOpenAI(
-            base_url=LM_STUDIO_BASE_URL,
-            api_key="not-needed",
-            model_name=self.model_name,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            streaming=True,
-            callback_manager=CallbackManager([StreamingStdOutCallbackHandler()])
-        )
+        self.llm = get_chatopen_ai_instance(self.model_name, self.temperature, self.max_tokens)
         
         # Create prompt template
         self.prompt = ChatPromptTemplate.from_messages([
@@ -822,50 +729,27 @@ class LangChainAgent:
             MessagesPlaceholder(variable_name="agent_scratchpad"),
         ])
         
-        # Create agent
+        # Create agent and executor
         self.agent = create_openai_functions_agent(
             llm=self.llm,
             tools=self.tools,
             prompt=self.prompt
         )
         
-        # Create agent executor
         self.agent_executor = AgentExecutor(
             agent=self.agent,
             tools=self.tools,
             memory=self.memory,
             verbose=True
         )
-        
-        # Create streaming agent executor
-        self.streaming_agent_executor = AgentExecutor(
-            agent=self.agent,
-            tools=self.tools,
-            memory=self.memory,
-            verbose=True
-        )
     
-    async def chat(
-        self,
-        message: str,
-        streaming: bool = False
-    ):
-        """
-        Process a chat message with the agent.
-        
-        Args:
-            message: The user message
-            streaming: Whether to use streaming response
-            
-        Returns:
-            If streaming=False: Dict containing response content and metadata
-            If streaming=True: Yields streaming chunks of the response
-        """
+    async def chat(self, message: str, streaming: bool = False):
+        """Process a chat message with the agent."""
         try:
             if streaming:
                 # Stream the response
                 collected_content = ""
-                async for chunk in self.streaming_agent_executor.astream({"input": message}):
+                async for chunk in self.agent_executor.astream({"input": message}):
                     if "output" in chunk:
                         content = chunk["output"]
                         collected_content += content
@@ -907,7 +791,6 @@ class LangChainAgent:
         """Clear the conversation memory"""
         self.memory.clear()
 
-# Example usage of tools
 def create_default_tools() -> List[Tool]:
     """Create default tools for the agent"""
     return [
@@ -932,22 +815,7 @@ async def chat_with_ai(
     use_agent: bool = False,
     tools: Optional[List[Tool]] = None
 ):
-    """
-    Process a chat message with AI.
-    
-    Args:
-        message: The current user message
-        history: Previous conversation history (list of role/content pairs)
-        model: Optional model override
-        system_prompt: Optional system prompt override
-        streaming: Whether to use streaming response
-        use_agent: Whether to use LangChain agent
-        tools: Optional list of tools for the agent
-        
-    Returns:
-        If streaming=False: Dict containing AI response with content, model used, etc.
-        If streaming=True: Yields streaming chunks of the AI response or stats data
-    """
+    """Process a chat message with AI."""
     if use_agent:
         # Create agent instance
         agent = LangChainAgent(
@@ -961,89 +829,29 @@ async def chat_with_ai(
             async for response in agent.chat(message, streaming=True):
                 yield response
         else:
-            response = await agent.chat(message, streaming=False)
-            yield response
+            async for response in agent.chat(message, streaming=False):
+                yield response
     else:
-        # Use original chat implementation
-        # Default system prompt if none provided
-        if system_prompt is None:
-            system_prompt = """You are a helpful AI assistant. 
-            You can structure your responses using <think>...</think> tags to show your reasoning process.
-            Think step by step and provide a detailed response.
-            Just list pipeline steps and don't be too detailed.
-            For example:    
-            <think>
-            The user is asking about... Let me consider this carefully...
-            </think>
-            
-            Then provide your main response after the think section.
-            
-            You have to use Latex to show mathematical expressions. When using LaTeX for mathematical expressions, follow these guidelines:
-            1. For inline math (within a sentence), use \(...\) delimiters:
-               Example: "The formula \(E = mc^2\) is famous."
-            
-            2. For display math (on its own line), use \[...\] delimiters:
-               Example: "The quadratic formula is:
-               \[
-               x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
-               \]"
-            
-            3. For matrices and other environments, use \[...\] with the appropriate environment:
-               Example: "The matrix A is:
-               \[
-               \begin{bmatrix}
-               a_{11} & a_{12} \\
-               a_{21} & a_{22}
-               \end{bmatrix}
-               \]"
-            
-            4. For code blocks containing LaTeX, use the latex language identifier:
-               ```latex
-               \begin{bmatrix}
-               a_{11} & a_{12} \\
-               a_{21} & a_{22}
-               \end{bmatrix}
-               ```
-            If there are compared requirement, create table with markdown to compare between objecs.
-            Bold the key word in the answer.
-            Provide clear, concise, and accurate responses to the user's questions like:
-            1. Overview of the topic
-            2. Key points or steps
-            ...
-            Be friendly and conversational in your replies.
-            You should use Markdown formatting in your responses, including headers, bulleted lists, tables using the GFM (GitHub Flavored Markdown) syntax.
-            Finally, provide a conclusion or summary of your response."""
-        
-        # Initialize message list with system prompt
-        messages = [AIMessage(role="system", content=system_prompt)]
-        
-        # Add conversation history if provided
-        if history:
-            for msg in history:
-                if msg["role"] in ["user", "assistant", "system"]:
-                    messages.append(AIMessage(role=msg["role"], content=msg["content"]))
-        
-        # Add current message
-        messages.append(AIMessage(role="user", content=message))
-        
-        # Create request
-        request = AIRequest(
-            messages=messages,
-            model=model,
-            temperature=0.7,
-            max_tokens=2000  # Larger context for chat
-        )
+        # Use simplified chat implementation
+        system_prompt = system_prompt or SYSTEM_PROMPTS["default_chat"]
         
         try:
+            request = await create_ai_request(
+                content=message,
+                system_prompt=system_prompt,
+                model=model,
+                temperature=0.7,
+                max_tokens=2000,  # Larger context for chat
+                history=history
+            )
+            
             if streaming:
                 # Stream the AI response
-                collected_content = ""
                 async for chunk in query_lm_studio_stream(request):
                     # Check if this is a stats message (JSON string)
-                    if chunk.startswith('{"type":"stats"'):
+                    if isinstance(chunk, str) and chunk.startswith('{"type":"stats"'):
                         yield chunk  # Pass through the stats data
                     else:
-                        collected_content += chunk
                         yield chunk  # Pass through regular content
             else:
                 # Query the AI with retry logic
@@ -1065,3 +873,4 @@ async def chat_with_ai(
                 "model": model or AI_MODEL,
                 "error": True
             }
+from typing import List, Dict, Optional, Any

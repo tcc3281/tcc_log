@@ -19,98 +19,100 @@ import {
   CheckIcon 
 } from '@heroicons/react/24/solid';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-// Use esm version to avoid TypeScript errors
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import katex from 'katex';
 
-// Process LaTeX content before rendering
-// Improved LaTeX content processing function
-// Improved LaTeX content processing function
-// Improved LaTeX content processing function
+// Improved LaTeX content processing function with better spacing and parsing
 const processLatexContent = (content: string): string => {
   if (!content) return '';
 
   let processed = content;
 
   // First, preserve existing properly formatted math expressions
-  const preservedMath: string[] = [];
+  const preservedMath: { placeholder: string; content: string }[] = [];
   
-  // Preserve display math ($$...$$)
-  processed = processed.replace(/\$\$([^$]+?)\$\$/g, (match, math) => {
+  // Helper function to add to preserved math with proper placeholders
+  const preserveMath = (match: string, isDisplay: boolean, convertTo?: string) => {
+    const mathContent = convertTo || match;
     const index = preservedMath.length;
-    preservedMath.push(match);
-    return `__PRESERVED_DISPLAY_${index}__`;
-  });
+    const placeholder = isDisplay ? 
+      `__PRESERVED_DISPLAY_${index}__` : 
+      `__PRESERVED_INLINE_${index}__`;
+    
+    preservedMath.push({
+      placeholder,
+      content: mathContent
+    });
+    
+    return placeholder;
+  };
   
-  // Preserve inline math ($...$)
-  processed = processed.replace(/\$([^$\n]+?)\$/g, (match, math) => {
-    const index = preservedMath.length;
-    preservedMath.push(match);
-    return `__PRESERVED_INLINE_${index}__`;
+  // Preserve display math ($$...$$) - handle multiline properly
+  processed = processed.replace(/\$\$([^$]*(?:\$(?!\$)[^$]*)*)\$\$/g, (match) => {
+    return preserveMath(match, true);
+  });
+    // Preserve \[ ... \] style display math - improved regex with lazy quantifier
+  processed = processed.replace(/\\\\?\[([\s\S]*?)\\\\?\]/g, (match, math) => {
+    // Mark explicitly as display math (block)
+    return preserveMath(match, true, `\n\n$$${math}$$\n\n`);
+  });
+  // Preserve inline math ($...$) - be more careful with matching
+  // Exclude cases like $10, $variable, etc. by requiring at least one math character
+  processed = processed.replace(/(?<!\$)\$([\\\{\}\[\]\(\)a-zA-Z0-9\^\*\_\+\-\=\|\/\.,;:'"!@#%&<>? ]+?)\$(?!\$)/g, (match) => {
+    return preserveMath(match, false);
   });
 
-  // Fix malformed expressions like "A = $\begin{bmatrix}..." (missing closing $)
-  processed = processed.replace(/\$\$\\begin\{([^}]+)\}([^$]*?)\\end\{\1\}(?!\$)/g, (match, env, content) => {
-    const cleanContent = content.replace(/\s*\\\\\s*/g, ' \\\\ ').trim();
-    return `$$\\begin{${env}}${cleanContent}\\end{${env}}$$`;
+  // Preserve \( ... \) style inline math
+  processed = processed.replace(/\\\\?\(([\s\S]*?)\\\\?\)/g, (match, math) => {
+    return preserveMath(match, false, `$${math}$`);
   });
-
-  // Convert \[ ... \] to $$ ... $$ (display math)
-  processed = processed.replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (match, math) => {
-    const cleanMath = math
-      .replace(/\s*\\\\\s*/g, ' \\\\ ') // Normalize line breaks
-      .replace(/\s+/g, ' ') // Normalize spaces
-      .trim();
-    return `$$${cleanMath}$$`;
-  });
-
-  // Convert \( ... \) to $ ... $ (inline math)
-  processed = processed.replace(/\\\(\s*([\s\S]*?)\s*\\\)/g, (match, math) => {
-    const cleanMath = math.trim();
-    return `$${cleanMath}$`;
-  });
-
-  // Handle standalone matrix environments that aren't already in math mode
-  processed = processed.replace(/(?<!\$)\\begin\{([^}]+)\}([\s\S]*?)\\end\{\1\}(?!\$)/g, (match, env, content) => {
-    const cleanContent = content
-      .replace(/\s*\\\\\s*/g, ' \\\\ ') // Normalize line breaks
-      .replace(/\s+/g, ' ') // Normalize spaces
-      .trim();
-    return `$$\\begin{${env}}${cleanContent}\\end{${env}}$$`;
-  });
-
-  // Handle complex expressions with \frac that contain matrix environments
-  processed = processed.replace(/\\frac\{([^}]+)\}\{([^}]+)\}\s*\\begin\{([^}]+)\}([\s\S]*?)\\end\{\3\}/g, (match, num, den, env, content) => {
+  // Handle complex math environments
+  processed = processed.replace(/\\begin\{([^}]+)\}([\s\S]*?)\\end\{\1\}/g, (match, env, content) => {
+    // If it's already wrapped in $$, preserve as is
+    if (match.startsWith('$') && match.endsWith('$')) {
+      return preserveMath(match, true);
+    }
+    
+    // Otherwise wrap in $$
     const cleanContent = content
       .replace(/\s*\\\\\s*/g, ' \\\\ ')
       .replace(/\s+/g, ' ')
       .trim();
-    return `$$\\frac{${num}}{${den}} \\begin{${env}}${cleanContent}\\end{${env}}$$`;
+    const wrapped = `$$\\begin{${env}}${cleanContent}\\end{${env}}$$`;
+    
+    return preserveMath(match, true, wrapped);
   });
-
-  // Clean up whitespace around math delimiters
-  processed = processed.replace(/\$\s+/g, '$');
-  processed = processed.replace(/\s+\$/g, '$');
-  processed = processed.replace(/\$\$\s+/g, '$$');
-  processed = processed.replace(/\s+\$\$/g, '$$');
-
-  // Restore preserved math expressions
-  preservedMath.forEach((math, index) => {
-    processed = processed.replace(`__PRESERVED_DISPLAY_${index}__`, math);
-    processed = processed.replace(`__PRESERVED_INLINE_${index}__`, math);
+  // Add spaces around LaTeX expressions and ensure \[...\] displays as block
+  preservedMath.forEach(item => {
+    const placeholder = item.placeholder;
+    let replacement = item.content;
+    
+    // Add spaces for inline math if not already present
+    if (placeholder.includes('INLINE') && 
+        !replacement.startsWith(' ') && 
+        !replacement.endsWith(' ')) {
+      // Check if it's a single dollar syntax or \( \) syntax
+      if (replacement.startsWith('$') && replacement.endsWith('$')) {
+        // Add spaces around single dollar inline math
+        replacement = ` ${replacement} `;
+      } else if (replacement.startsWith('\\(') && replacement.endsWith('\\)')) {
+        // Add spaces around \( \) inline math
+        replacement = ` ${replacement} `;
+      }
+    }
+    
+    // Ensure \[...\] is properly formatted as display math (block)
+    if (replacement.startsWith('\\[') && replacement.endsWith('\\]')) {
+      // Convert \[...\] to $$...$$ format to ensure proper block display
+      replacement = `\n\n$$${replacement.slice(2, -2)}$$\n\n`;
+    }
+    
+    processed = processed.replace(placeholder, replacement);
   });
-
-  // Final cleanup - normalize multiple dollar signs to display math
-  processed = processed.replace(/\$\$\$+/g, '$$');
 
   return processed;
 };
 
-// Custom math component
-const MathComponent = ({ math, display }: { math: string; display: boolean }) => {
-  const Delimiter = display ? '$$' : '$';
-  return <span>{`${Delimiter}${math}${Delimiter}`}</span>;
-};
+// ... rest of the file remains exactly the same ...
 
 // Configure markdown components
 const markdownComponents: Components = {
@@ -121,7 +123,6 @@ const markdownComponents: Components = {
     
     // Check if this is a LaTeX code block
     if (match && match[1] === 'latex') {
-      // Process the LaTeX content
       const processedContent = processLatexContent(content);
       
       return (
@@ -130,13 +131,11 @@ const markdownComponents: Components = {
             remarkPlugins={[remarkGfm, remarkMath]}
             rehypePlugins={[rehypeKatex]}
             components={{
-              // Override code component to prevent double rendering
               code: ({ node, ...props }) => <span {...props} />,
-              // Override paragraph to handle math blocks
               p: ({ node, children, ...props }) => {
                 const content = React.Children.toArray(children).join('');
                 if (content.startsWith('$$') && content.endsWith('$$')) {
-                  return <div className="math-block overflow-x-auto" {...props}>{children}</div>;
+                  return <div className="math-block overflow-x-auto my-4" {...props}>{children}</div>;
                 }
                 return <p {...props}>{children}</p>;
               }
@@ -153,7 +152,7 @@ const markdownComponents: Components = {
         style={vscDarkPlus as any}
         language={match ? match[1] : 'text'}
         PreTag="div"
-        className="rounded"
+        className="rounded my-2"
         {...props}
       >
         {content}
@@ -163,26 +162,62 @@ const markdownComponents: Components = {
         {children}
       </code>
     );
-  },
-  // Add paragraph component to handle math blocks in both think and response
+  },  // Enhanced paragraph component to handle math blocks properly
   p: ({ node, children, ...props }) => {
     const content = React.Children.toArray(children).join('');
-    if (content.startsWith('$$') && content.endsWith('$$')) {
-      return <div className="math-block overflow-x-auto" {...props}>{children}</div>;
+    const trimmedContent = content.trim();
+    
+    // Check for display math with more accurate pattern 
+    // (needs to start and end with $$ to be considered a block)
+    if (
+      (trimmedContent.startsWith('$$') && trimmedContent.endsWith('$$')) ||
+      (trimmedContent.startsWith('\\[') && trimmedContent.endsWith('\\]'))
+    ) {
+      return (
+        <div className="math-display my-6 overflow-x-auto py-2 px-1 bg-gray-50 dark:bg-gray-900/30 rounded" {...props}>
+          {children}
+        </div>
+      );
     }
-    return <p {...props}>{children}</p>;
+    return <p className="mb-3" {...props}>{children}</p>;
   },
-  // Add list components
-  ol: ({ children }) => <ol className="list-decimal pl-5 my-3 space-y-1">{children}</ol>,
-  ul: ({ children }) => <ul className="list-disc pl-5 my-3 space-y-1">{children}</ul>,
-  li: ({ children }) => <li className="mb-1">{children}</li>,
-  // Handle tables, blockquotes, and other elements with better styling
-  table: ({ children }) => <table className="border-collapse border-2 border-gray-300 dark:border-gray-600 my-4 w-full">{children}</table>,
+  // Enhanced list components with better spacing
+  ol: ({ children }) => <ol className="list-decimal pl-6 my-4 space-y-2">{children}</ol>,
+  ul: ({ children }) => <ul className="list-disc pl-6 my-4 space-y-2">{children}</ul>,
+  li: ({ children }) => <li className="mb-1 leading-relaxed">{children}</li>,
+  // Better table styling
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-4">
+      <table className="border-collapse border-2 border-gray-300 dark:border-gray-600 w-full">
+        {children}
+      </table>
+    </div>
+  ),
   tr: ({ children }) => <tr className="border-b-2 border-gray-300 dark:border-gray-600">{children}</tr>,
-  th: ({ children }) => <th className="border-2 border-gray-300 dark:border-gray-600 px-4 py-2 bg-gray-100 dark:bg-gray-800 font-semibold">{children}</th>,
-  td: ({ children }) => <td className="border-2 border-gray-300 dark:border-gray-600 px-4 py-2">{children}</td>,
-  blockquote: ({ children }) => <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 italic my-4">{children}</blockquote>,
-  img: (props) => <img {...props} className="max-w-full rounded my-4" alt={props.alt || "Image"} />
+  th: ({ children }) => (
+    <th className="border-2 border-gray-300 dark:border-gray-600 px-4 py-2 bg-gray-100 dark:bg-gray-800 font-semibold text-left">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="border-2 border-gray-300 dark:border-gray-600 px-4 py-2">
+      {children}
+    </td>
+  ),
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-4 border-blue-400 dark:border-blue-500 pl-4 py-2 my-4 bg-blue-50 dark:bg-blue-900/20 italic">
+      {children}
+    </blockquote>
+  ),
+  img: (props) => <img {...props} className="max-w-full rounded my-4" alt={props.alt || "Image"} />,
+  // Better heading styles
+  h1: ({ children }) => <h1 className="text-2xl font-bold mb-4 mt-6">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-xl font-bold mb-3 mt-5">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-lg font-bold mb-2 mt-4">{children}</h3>,
+  h4: ({ children }) => <h4 className="text-base font-bold mb-2 mt-3">{children}</h4>,
+  // Enhanced strong/em styling
+  strong: ({ children }) => <strong className="font-bold text-gray-900 dark:text-gray-100">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
 };
 
 interface ChatMessageDisplayProps {
@@ -215,7 +250,6 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
   const formatStats = () => {
     if (!message.inference_time && !message.tokens_per_second) return null;
 
-    // Estimate total tokens based on content length (approximate)
     const totalTokens = Math.round((message.content?.length || 0) / 4);
 
     return (
@@ -261,13 +295,13 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
 
   const isUser = message.role === 'user';
 
-  // Process content with LaTeX
+  // Process content with improved LaTeX handling
   const processedContent = processLatexContent(message.content);
   const processedThink = message.think ? processLatexContent(message.think) : '';
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
-      <div className={`flex items-start max-w-3xl ${isUser ? 'flex-row-reverse' : ''}`}>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-6 ${className}`}>
+      <div className={`flex items-start max-w-4xl ${isUser ? 'flex-row-reverse' : ''}`}>
         {/* Avatar */}
         <div className={`flex-shrink-0 ${isUser ? 'ml-3' : 'mr-3'}`}>
           {isUser ? (
@@ -280,17 +314,17 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
         {/* Message Content */}
         <div className="flex flex-col relative w-full">          
           <div
-            className={`p-3 rounded-lg ${
+            className={`p-4 rounded-lg ${
               isUser
                 ? 'bg-blue-100 dark:bg-blue-800/60 text-gray-800 dark:text-gray-100'
-                : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-100'
+                : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-100 shadow-sm'
             }`}
           >
             {/* Thinking Section - Collapsible */}
             {message.think && message.role === 'assistant' && (
-              <div className="mb-3">
+              <div className="mb-4">
                 <div 
-                  className="mb-1 flex items-center justify-between cursor-pointer select-none"
+                  className="mb-2 flex items-center justify-between cursor-pointer select-none p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                   onClick={() => setShowThinking(!showThinking)}
                 >
                   <span className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center">
@@ -306,7 +340,7 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
                       e.stopPropagation();
                       handleCopy(message.think || '', 'think');
                     }}
-                    className="flex items-center hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                    className="flex items-center hover:text-gray-700 dark:hover:text-gray-200 transition-colors text-xs"
                     title="Copy thinking process"
                     aria-label="Copy thinking process"
                   >
@@ -315,12 +349,12 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
                     ) : (
                       <ClipboardIcon className="h-3 w-3 mr-1" />
                     )}
-                    <span className="text-xs">{copyStatus.think === 'copied' ? "Copied" : "Copy"}</span>
+                    <span>{copyStatus.think === 'copied' ? "Copied" : "Copy"}</span>
                   </button>
                 </div>
                 
                 {showThinking && (
-                  <div className="p-2 bg-gray-100 dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm">
+                  <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm, remarkMath]}
                       rehypePlugins={[rehypeKatex]}
@@ -335,26 +369,28 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
 
             {/* Main Content */}
             {message.content ? (
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm, remarkMath]}
-                rehypePlugins={[rehypeKatex]}
-                components={markdownComponents}
-              >
-                {processedContent}
-              </ReactMarkdown>
+              <div className="prose prose-sm max-w-none dark:prose-invert">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                  components={markdownComponents}
+                >
+                  {processedContent}
+                </ReactMarkdown>
+              </div>
             ) : (
               isStreaming && (
                 <div className="flex space-x-2 items-center h-6">
-                  <div className="w-2 h-2 rounded-full bg-gray-300 animate-pulse"></div>
-                  <div className="w-2 h-2 rounded-full bg-gray-300 animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-                  <div className="w-2 h-2 rounded-full bg-gray-300 animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                  <div className="w-2 h-2 rounded-full bg-gray-400 animate-pulse"></div>
+                  <div className="w-2 h-2 rounded-full bg-gray-400 animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                  <div className="w-2 h-2 rounded-full bg-gray-400 animate-pulse" style={{ animationDelay: '0.4s' }}></div>
                 </div>
               )
             )}
           </div>
 
           {/* Timestamp, Stats, and Copy Button Row */}
-          <div className={`flex mt-1 text-xs text-gray-500 dark:text-gray-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
+          <div className={`flex mt-2 text-xs text-gray-500 dark:text-gray-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
             <div className="flex items-center gap-3">
               {/* Character and word count for user messages */}
               {isUser && message.content && (
@@ -383,7 +419,7 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
                 </button>
               )}
               
-              {/* Vertical separator if both copy button and timestamp exist */}
+              {/* Vertical separator */}
               {message.content && message.timestamp && (
                 <span className="text-gray-300 dark:text-gray-600">|</span>
               )}
@@ -414,4 +450,3 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
 };
 
 export default ChatMessageDisplay;
-

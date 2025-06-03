@@ -30,55 +30,17 @@
 }
 
 /* Style for katex math blocks */
-.markdownPreview .katex-display {
+.markdownPreview .katexBlock {
   overflow-x: auto;
   overflow-y: hidden;
   padding: 1em 0;
   text-align: center;
-  margin: 1em 0;
 }
 
 /* Style for inline katex */
-.markdownPreview .katex {
-  font-size: 1.1em;
+.markdownPreview .katexInline {
   padding: 0 0.2em;
-  display: inline-block;
-  line-height: 1.2;
-  text-indent: 0;
-  text-rendering: auto;
-  word-spacing: normal;
-  word-wrap: normal;
-  direction: ltr;
-  white-space: nowrap;
-}
-
-/* Ensure proper alignment of inline math */
-.markdownPreview .katex-html {
-  display: inline-block;
-  position: relative;
-  text-align: center;
-}
-
-/* Style for matrices and other advanced math elements */
-.markdownPreview .katex-display > .katex {
-  display: inline-block;
-  white-space: nowrap;
-  max-width: 100%;
-  text-align: center;
-  font-size: 1.21em;
-}
-
-.markdownPreview .katex-display > .katex > .katex-html {
-  display: block;
-  position: relative;
-  overflow-x: auto;
-  overflow-y: hidden;
-  text-align: center;
-}
-
-.markdownPreview .katex-display > .katex > .katex-html > .tag {
-  position: absolute;
-  right: 0;
+  font-size: 1.1em;
 }
 
 /* Style for tables */
@@ -127,20 +89,15 @@
 /* Dark mode adjustments */
 @media (prefers-color-scheme: dark) {
   .markdownPreview code:not([class*="language-"]) {
-    background-color: rgba(255, 255, 255, 0.1);
+    background-color: rgba(127, 127, 127, 0.2);
   }
   
   .markdownPreview th {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: rgba(127, 127, 127, 0.2);
   }
   
   .markdownPreview tr:nth-child(even) {
-    background-color: rgba(255, 255, 255, 0.02);
-  }
-  
-  .markdownPreview blockquote {
-    border-left-color: rgba(255, 255, 255, 0.2);
-    color: rgba(255, 255, 255, 0.7);
+    background-color: rgba(127, 127, 127, 0.1);
   }
 }
 
