@@ -1,12 +1,6 @@
-<<<<<<< HEAD
-import api from './api';
-
-// We'll use the standardized API instance from api.ts
-=======
 import axios from 'axios';
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
->>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
 
 // Parse JWT token manually
 function parseJwt(token: string) {
@@ -35,20 +29,6 @@ function parseJwt(token: string) {
 }
 
 // Helper function để test token và endpoint
-<<<<<<< HEAD
-async function debugFetch(path: string, token: string) {
-  const headers = { 'Authorization': `Bearer ${token}` };
-  console.log(`Debug fetch to ${path} with headers:`, headers);
-  
-  try {
-    const response = await api.get(path, {
-      headers: headers
-    });
-    
-    console.log(`Response status: ${response.status}`);
-    console.log('Response data:', response.data);
-    return response.data;
-=======
 async function debugFetch(url: string, token: string) {
   const headers = { 'Authorization': `Bearer ${token}` };
   console.log(`Debug fetch to ${url} with headers:`, headers);
@@ -71,7 +51,6 @@ async function debugFetch(url: string, token: string) {
       console.log('Raw response:', responseText);
       return responseText;
     }
->>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
   } catch (err) {
     console.error('Debug fetch error:', err);
     throw err;
@@ -90,16 +69,6 @@ export async function getAuthToken(username: string, password: string) {
     
     console.log(`Authenticating user: ${username}`);
     
-<<<<<<< HEAD
-    // Gọi API để lấy token using the api instance
-    const response = await api.post('/auth/token', params, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      }
-    });
-    
-    const data = response.data;
-=======
     // Gọi API để lấy token
     const response = await fetch(`${apiUrl}/auth/token`, {
       method: 'POST',
@@ -116,7 +85,6 @@ export async function getAuthToken(username: string, password: string) {
     }
     
     const data = await response.json();
->>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
     
     if (!data || !data.access_token) {
       throw new Error('Token không hợp lệ từ phản hồi API');
@@ -132,11 +100,7 @@ export async function getAuthToken(username: string, password: string) {
 }
 
 /**
-<<<<<<< HEAD
  * Lấy thông tin người dùng qua token
-=======
- * Lấy thông tin người dùng qua token và username
->>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
  */
 export async function getUserInfo(token: string) {
   try {
@@ -144,60 +108,25 @@ export async function getUserInfo(token: string) {
       throw new Error('Token is required');
     }
     
-<<<<<<< HEAD
     console.log('Getting user info with token...');
     
     // Sử dụng endpoint /auth/me thay vì /users để lấy thông tin user hiện tại
-    const userResponse = await api.get('/auth/me', {
+    const userResponse = await fetch(`${apiUrl}/auth/me`, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       }
     });
     
-    const user = userResponse.data;
+    if (!userResponse.ok) {
+      const errorText = await userResponse.text();
+      console.error('Error getting user info:', userResponse.status, errorText);
+      throw new Error(`Failed to get user info: ${userResponse.status} ${userResponse.statusText}`);
+    }
+    
+    const user = await userResponse.json();
     console.log('User info retrieved:', user);
     
-=======
-    // Giải mã JWT token để lấy username
-    const decoded = parseJwt(token);
-    console.log('Decoded token:', decoded);
-    
-    if (!decoded || !decoded.sub) {
-      throw new Error('Invalid token or missing subject (username)');
-    }
-    
-    // Lấy username từ token (JWT thường lưu trong trường 'sub')
-    const username = decoded.sub;
-    
-    // Đầu tiên, tìm user_id bằng cách gọi API users với filter username
-    console.log(`Finding user info for username: ${username}`);
-    
-    // Lấy danh sách tất cả người dùng (hoặc có thể cải thiện API để lọc theo username)
-    const usersResponse = await fetch(`${apiUrl}/users`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
-    
-    if (!usersResponse.ok) {
-      const errorText = await usersResponse.text();
-      console.error('Error getting users list:', usersResponse.status, errorText);
-      throw new Error(`Failed to get users list: ${usersResponse.status} ${usersResponse.statusText}`);
-    }
-    
-    const users = await usersResponse.json();
-    console.log('Users list:', users);
-    
-    // Tìm user theo username
-    const user = users.find((u: any) => u.username === username);
-    
-    if (!user) {
-      throw new Error(`User with username ${username} not found`);
-    }
-    
-    console.log('Found user:', user);
->>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
     return user;
   } catch (error) {
     console.error('Lỗi lấy thông tin người dùng:', error);
@@ -208,20 +137,10 @@ export async function getUserInfo(token: string) {
 /**
  * Đăng ký người dùng mới
  */
-export async function registerUser(username: string, email: string, password: string) {
-  try {
+export async function registerUser(username: string, email: string, password: string) {  try {
     console.log(`Registering new user: ${username}, ${email}`);
     
-<<<<<<< HEAD
-    const response = await api.post('/users', {
-      username,
-      email,
-      password
-    });
-    
-    return response.data;
-=======
-    const response = await fetch(`${apiUrl}/users`, {
+    const response = await fetch(`${apiUrl}/users/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -241,7 +160,6 @@ export async function registerUser(username: string, email: string, password: st
     
     const data = await response.json();
     return data;
->>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
   } catch (error) {
     console.error('Lỗi đăng ký người dùng:', error);
     throw error;

@@ -360,7 +360,7 @@ const AIPage: React.FC = () => {
           <div ref={messagesEndRef} />
         </div>
       </div>      {/* Input Area */}
-      <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg flex items-end">
+      <div className="flex items-end bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm">
         <textarea 
           ref={textareaRef}
           value={input}
@@ -371,6 +371,11 @@ const AIPage: React.FC = () => {
           className="flex-1 py-3 px-4 bg-transparent text-gray-900 dark:text-gray-100 outline-none resize-none max-h-32"
           disabled={isTyping}
         />
+        
+        {/* Character and word count */}
+        <div className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400">
+          {input.length} characters, {input.split(/\s+/).filter(Boolean).length} words
+        </div>
         
         {/* Stop button - only show when streaming */}
         {isStreaming && (

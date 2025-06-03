@@ -20,9 +20,8 @@ const NewTopicPage = () => {
     try {
       setIsSubmitting(true);
       setError('');
-      
-      // Create the new topic
-      await api.post('/topics', { 
+        // Create the new topic
+      await api.post('/topics/', { 
         topic_name: topicName, 
         description 
       });
