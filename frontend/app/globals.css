@@ -180,15 +180,15 @@ button {
 
   /* Tables in Markdown */
   .prose table {
-    @apply w-full border-collapse my-4;
+    @apply w-full border-collapse my-4 border-2 border-gray-300 dark:border-gray-600;
   }
 
   .prose th {
-    @apply bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 px-3 py-2 text-left;
+    @apply bg-gray-100 dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-600 px-3 py-2 text-left font-semibold;
   }
 
   .prose td {
-    @apply border border-gray-300 dark:border-gray-600 px-3 py-2;
+    @apply border-2 border-gray-300 dark:border-gray-600 px-3 py-2;
   }
 
   /* Horizontal rule in Markdown */
