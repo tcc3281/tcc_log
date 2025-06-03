@@ -79,9 +79,6 @@
 
 ### On Windows (PowerShell)
 ```powershell
-# Navigate to the project directory
-cd d:\chientuhocai\tcc_log
-
 # Run the setup script
 .\scripts\run_docker.ps1
 ```
