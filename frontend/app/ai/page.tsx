@@ -24,6 +24,7 @@ const AIPage: React.FC = () => {
   const [streamingMessageId, setStreamingMessageId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [useAgent, setUseAgent] = useState<boolean>(false); // Thêm state cho chế độ Agent
 
   // Redirect if not logged in
   useEffect(() => {
@@ -197,7 +198,8 @@ const AIPage: React.FC = () => {
                 lastMessage.content = answerContent;
               }
               return newMessages;
-            });          } else if (streamData.type === 'stats') {
+            });
+          } else if (streamData.type === 'stats') {
             // Update message with inference stats
             setMessages(prevMessages => {
               const newMessages = [...prevMessages];
@@ -240,7 +242,8 @@ const AIPage: React.FC = () => {
             });
           }
         },
-        controller.signal
+        controller.signal,
+        useAgent  // Truyền tham số useAgent
       );
       
     } catch (err: any) {
@@ -302,6 +305,21 @@ const AIPage: React.FC = () => {
         
         {/* Model selection */}
         <div className="flex items-center space-x-4">
+          {/* Mode selection */}
+          <div className="relative">
+            <select
+              value={useAgent ? "agent" : "ask"}
+              onChange={(e) => setUseAgent(e.target.value === "agent")}
+              className="block appearance-none bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md py-2 px-3 pr-8 text-gray-900 dark:text-gray-100 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="ask">Ask</option>
+              <option value="agent">Agent</option>
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700 dark:text-gray-300">
+              <ChevronRightIcon className="h-4 w-4 transform rotate-90" />
+            </div>
+          </div>
+          
           {models.length > 0 && (
             <div className="relative">
               <select
@@ -359,7 +377,9 @@ const AIPage: React.FC = () => {
           {/* Scroll anchor */}
           <div ref={messagesEndRef} />
         </div>
-      </div>      {/* Input Area */}
+      </div>
+      
+      {/* Input Area */}
       <div className="flex items-end bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm">
         <textarea 
           ref={textareaRef}
@@ -407,7 +427,7 @@ const AIPage: React.FC = () => {
         Press Enter to send, Shift+Enter for new line • {
           isStreaming 
             ? 'Streaming AI response... (Click stop button to cancel)' 
-            : 'AI Chat with Think/Answer Separation'
+            : `AI Chat (Mode: ${useAgent ? 'Agent' : 'Ask'}) with Think/Answer Separation`
         }
       </div>
     </div>
