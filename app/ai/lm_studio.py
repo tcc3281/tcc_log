@@ -782,14 +782,19 @@ async def chat_with_ai(
                 )
                 print(f"{COLORS['GREEN']}✓ LangChainAgent initialized successfully{COLORS['RESET']}")
                 
-                # Stream or non-stream response
+                # Stream or non-stream response using enhanced streaming
                 if streaming:
-                    async for chunk in agent.agent_executor.astream({"input": message}):
-                        if "output" in chunk:
-                            yield chunk["output"]
+                    print(f"{COLORS['CYAN']}🌊 Starting streaming response...{COLORS['RESET']}")
+                    # Use direct streaming method that bypasses agent limitations
+                    async for chunk in agent.chat_with_direct_streaming(message):
+                        if chunk:  # Only yield non-empty chunks
+                            yield chunk
                 else:
+                    print(f"{COLORS['BLUE']}💬 Processing non-streaming response...{COLORS['RESET']}")
+                    # Use non-streaming mode
                     async for response in agent.chat(message, streaming=False):
-                        yield response
+                        if response:  # Only yield non-empty responses
+                            yield response
                 return  # Exit after successful agent processing
             except Exception as agent_error:
                 logger.error(f"Agent error: {agent_error}")
@@ -837,4 +842,38 @@ async def chat_with_ai(
             "model": model or AI_MODEL,
             "error": True
         }
+
+async def chat_with_ai_agent_enhanced_streaming(
+    message: str,
+    model: Optional[str] = None,
+    system_prompt: Optional[str] = None,
+    tools: Optional[List[Tool]] = None
+):
+    """
+    Enhanced streaming chat with agent that provides detailed events.
+    This function gives more granular control over the streaming process,
+    showing tool usage, thinking process, and final responses.
+    """
+    try:
+        agent_status = f"{COLORS['GREEN']}{COLORS['BOLD']}[ENHANCED AGENT STREAMING]{COLORS['RESET']}"
+        print(f"\n{agent_status} Initializing LangChainAgent with model: {model or AI_MODEL}")
+        
+        from app.ai.agent import LangChainAgent
+        agent = LangChainAgent(
+            model_name=model or AI_MODEL,
+            system_prompt=system_prompt,
+            tools=tools or create_default_tools()
+        )
+        print(f"{COLORS['GREEN']}✓ Enhanced streaming agent initialized{COLORS['RESET']}")
+        print(f"{COLORS['CYAN']}🔍 Starting detailed streaming...{COLORS['RESET']}")
+        
+        # Use the enhanced event streaming
+        async for event_chunk in agent.astream_events(message):
+            if event_chunk:
+                yield event_chunk
+                
+    except Exception as e:
+        logger.error(f"Enhanced agent streaming error: {e}")
+        error_msg = f"Enhanced streaming error: {str(e)}"
+        yield error_msg
 from typing import List, Dict, Optional, Any
