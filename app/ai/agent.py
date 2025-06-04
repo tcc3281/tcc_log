@@ -1,17 +1,14 @@
 import logging
 from typing import Optional, List, Dict, Any
-import json
-import httpx
-
+import os
 # Import từ lm_studio
-# Import từ lm_studio
-from lm_studio import (
+from app.ai.lm_studio import (
     get_chatopen_ai_instance,
     DEFAULT_AI_MODEL,
     DEFAULT_TEMPERATURE,
     DEFAULT_MAX_TOKENS,
     SYSTEM_PROMPTS,
-    AI_MODEL  # Thêm vào đây
+    AI_MODEL
 )
 
 # Thiết lập logger
@@ -28,6 +25,10 @@ from langchain_core.tools import Tool
 from langchain.memory import ConversationBufferMemory
 from langchain_core.prompts import MessagesPlaceholder
 
+# Import Tools
+from app.ai.sql_tool import PostgreSQLTool
+
+
 class LangChainAgent:
     """Simplified LangChain Agent class"""
     def __init__(
@@ -42,7 +43,13 @@ class LangChainAgent:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.tools = tools or []
+        
+        # Escape curly braces in system_prompt
         self.system_prompt = system_prompt or SYSTEM_PROMPTS["default_chat"]
+        self.system_prompt = self.system_prompt.replace("{", "{{").replace("}", "}}")
+        
+        # Log system_prompt to debug
+        logger.debug(f"System prompt content: {self.system_prompt[:500]}...")
         
         # Initialize memory
         self.memory = ConversationBufferMemory(
@@ -50,75 +57,191 @@ class LangChainAgent:
             return_messages=True
         )
         
-        # Initialize LLM
-        self.llm = get_chatopen_ai_instance(self.model_name, self.temperature, self.max_tokens)
+        # Only try to add SQL tools if any tools were specified
+        if tools is None:
+            self.__add__postgre_sql_tool()  # Add PostgreSQL tool if available
         
-        # Create prompt template
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system", self.system_prompt),
-            MessagesPlaceholder(variable_name="chat_history"),
-            ("human", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad"),
-        ])
+        # Log system_prompt again after adding SQL tools
+        logger.debug(f"System prompt after SQL tools: {self.system_prompt[:500]}...")
         
-        # Create agent and executor
-        self.agent = create_openai_functions_agent(
-            llm=self.llm,
-            tools=self.tools,
-            prompt=self.prompt
+        # Initialize the LLM
+        llm = get_chatopen_ai_instance(
+            model=self.model_name,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens
         )
         
-        self.agent_executor = AgentExecutor(
-            agent=self.agent,
-            tools=self.tools,
-            memory=self.memory,
-            verbose=True
-        )
-    
-    async def chat(self, message: str, streaming: bool = False):
-        """Process a chat message with the agent."""
         try:
-            if streaming:
-                # Stream the response
-                collected_content = ""
-                async for chunk in self.agent_executor.astream({"input": message}):
-                    if "output" in chunk:
-                        content = chunk["output"]
-                        collected_content += content
-                        yield content
-                
-                # Add to memory
-                self.memory.chat_memory.add_user_message(message)
-                self.memory.chat_memory.add_ai_message(collected_content)
-            else:
-                # Get complete response
-                response = await self.agent_executor.ainvoke({"input": message})
-                
-                # Add to memory
-                self.memory.chat_memory.add_user_message(message)
-                self.memory.chat_memory.add_ai_message(response["output"])
-                
-                yield {
-                    "content": response["output"],
-                    "model": self.model_name,
-                    "usage": None  # LangChain doesn't provide usage stats
-                }
-        
-        except Exception as e:
-            logger.error(f"Error in agent chat: {e}")
-            error_msg = str(e)
-            if "Client disconnected" in error_msg:
-                error_msg = "The response took too long. Try asking a shorter question."
+            # Create prompt template with agent_scratchpad
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", self.system_prompt),
+                MessagesPlaceholder(variable_name="chat_history"),
+                ("human", "{input}"),
+                MessagesPlaceholder(variable_name="agent_scratchpad")  # Thêm placeholder cho agent_scratchpad
+            ])
             
-            if streaming:
-                yield f"Error: {error_msg}"
-            else:
-                yield {
-                    "content": f"Error: {error_msg}",
-                    "model": self.model_name,
-                    "error": True
-                }
+            # Create the agent with tools
+            self.agent = create_openai_functions_agent(
+                llm=llm,
+                tools=self.tools,
+                prompt=prompt
+            )
+            
+            # Create agent executor
+            self.agent_executor = AgentExecutor(
+                agent=self.agent,
+                tools=self.tools,
+                memory=self.memory,
+                verbose=False,
+                handle_parsing_errors=True
+            )
+        except Exception as e:
+            logger.error(f"Error initializing agent: {e}")
+            logger.exception(e)
+            raise
+
+    def query(self, query_text: str) -> Dict[str, Any]:
+        """Process a user query and return results"""
+        try:
+            result = self.agent_executor.invoke({"input": query_text})
+            return {
+                "response": result.get("output", ""),
+                "error": None
+            }
+        except Exception as e:
+            logger.error(f"Error processing query: {e}")
+            logger.exception(e)
+            return {
+                "response": f"Xảy ra lỗi khi xử lý câu hỏi: {str(e)}",
+                "error": str(e)
+            }
     
     def clear_memory(self):
         """Clear the conversation memory"""
         self.memory.clear()
+        
+    def _get_sql_prompt(self, schema_text: str) -> str:
+        """Create specialized prompt for database interaction"""
+        # Check if schema is empty and handle that case
+        if not schema_text or schema_text.strip() == "":
+            safe_schema_text = "No tables found in the database."
+            logger.debug("Empty schema detected, using default text.")
+        else:
+            # Escape any curly braces in schema_text
+            safe_schema_text = schema_text.replace("{", "{{").replace("}", "}}")
+        
+        # Log the schema text for debugging
+        logger.debug(f"Schema text length: {len(schema_text) if schema_text else 0}")
+        logger.debug(f"Schema text (first 100 chars): {schema_text[:100] if schema_text else 'Empty'}")
+        logger.debug(f"Escaped schema text (first 100 chars): {safe_schema_text[:100] if safe_schema_text else 'Empty'}")
+        
+        # Construct the SQL prompt
+        sql_prompt = "\n\n## Database Access\n"
+        sql_prompt += "You have access to a PostgreSQL database with the following schema:\n\n"
+        sql_prompt += "```\n"
+        sql_prompt += safe_schema_text
+        sql_prompt += "\n```\n\n"
+        
+        # Add SQL guidelines (ensure no unescaped curly braces here)
+        sql_prompt += """
+    ### Available Database Tools:
+    1. `database_query`: Execute SQL queries on the PostgreSQL database
+    2. `get_database_schema`: Get the full database schema
+    3. `analyze_query`: Analyze a SQL query for issues without executing it
+    4. `get_table_info`: Get detailed information about a specific table
+    5. `inspect_data`: Get a sample of data from a table
+    6. `get_table_relationships`: Get all relationships between tables
+    7. `get_table_sizes`: Get information about the data size of tables
+
+    ### SQL Guidelines:
+    1. Always analyze the schema first to understand the data structure
+    2. Use appropriate SQL statements based on the task:
+    - SELECT: To retrieve data
+    - INSERT, UPDATE, DELETE: To modify data
+    3. Always use proper SQL syntax and PostgreSQL features
+    4. When writing SQL queries:
+    - Use explicit column names instead of * when possible
+    - Add proper JOIN conditions when joining tables
+    - Include appropriate WHERE clauses to filter data
+    - Use ORDER BY for sorting when needed
+    - Add LIMIT to control result size
+    5. Format SQL queries properly with appropriate indentation
+    """
+        # Escape curly braces in the entire sql_prompt
+        sql_prompt = sql_prompt.replace("{", "{{").replace("}", "}}")
+        
+        # Log final sql_prompt
+        logger.debug(f"Final SQL prompt (first 100 chars): {sql_prompt[:100]}...")
+        
+        return sql_prompt
+    
+
+    
+    def _create_dummy_schema(self) -> str:
+        """Create a dummy schema when no tables are available in the database"""
+        return (
+            "No tables found in the database currently.\n\n"
+            "You can create tables with SQL commands like:\n"
+            "CREATE TABLE entries (\n"
+            "    id SERIAL PRIMARY KEY,\n"
+            "    content TEXT NOT NULL,\n" 
+            "    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n"
+            ");\n\n"
+            "Then insert data with:\n"
+            "INSERT INTO entries (content) VALUES ('Sample entry 1'), ('Sample entry 2');"
+        )
+    
+    def _get_sql_prompt(self, schema_text: str) -> str:
+        """Create specialized prompt for database interaction"""
+        # Check if schema is empty and handle that case
+        if not schema_text or schema_text.strip() == "":
+            safe_schema_text = "No tables found in the database."
+            logger.debug("Empty schema detected, using default text.")
+        else:
+            # Escape any curly braces in schema_text
+            safe_schema_text = schema_text.replace("{", "{{").replace("}", "}}")
+        
+        # Log the schema text for debugging
+        logger.debug(f"Schema text length: {len(schema_text) if schema_text else 0}")
+        logger.debug(f"Schema text (first 100 chars): {schema_text[:100] if schema_text else 'Empty'}")
+        logger.debug(f"Escaped schema text (first 100 chars): {safe_schema_text[:100] if safe_schema_text else 'Empty'}")
+        
+        # Construct the SQL prompt
+        sql_prompt = "\n\n## Database Access\n"
+        sql_prompt += "You have access to a PostgreSQL database with the following schema:\n\n"
+        sql_prompt += "```\n"
+        sql_prompt += safe_schema_text
+        sql_prompt += "\n```\n\n"
+        
+        # Add SQL guidelines (ensure no unescaped curly braces here)
+        sql_prompt += """
+    ### Available Database Tools:
+    1. `database_query`: Execute SQL queries on the PostgreSQL database
+    2. `get_database_schema`: Get the full database schema
+    3. `analyze_query`: Analyze a SQL query for issues without executing it
+    4. `get_table_info`: Get detailed information about a specific table
+    5. `inspect_data`: Get a sample of data from a table
+    6. `get_table_relationships`: Get all relationships between tables
+    7. `get_table_sizes`: Get information about the data size of tables
+
+    ### SQL Guidelines:
+    1. Always analyze the schema first to understand the data structure
+    2. Use appropriate SQL statements based on the task:
+    - SELECT: To retrieve data
+    - INSERT, UPDATE, DELETE: To modify data
+    3. Always use proper SQL syntax and PostgreSQL features
+    4. When writing SQL queries:
+    - Use explicit column names instead of * when possible
+    - Add proper JOIN conditions when joining tables
+    - Include appropriate WHERE clauses to filter data
+    - Use ORDER BY for sorting when needed
+    - Add LIMIT to control result size
+    5. Format SQL queries properly with appropriate indentation
+    """
+        # Escape curly braces in the entire sql_prompt
+        sql_prompt = sql_prompt.replace("{", "{{").replace("}", "}}")
+        
+        # Log final sql_prompt
+        logger.debug(f"Final SQL prompt (first 100 chars): {sql_prompt[:100]}...")
+        
+        return sql_prompt

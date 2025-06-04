@@ -22,6 +22,20 @@ from langchain_core.tools import Tool
 from langchain.memory import ConversationBufferMemory
 from langchain_core.prompts import MessagesPlaceholder
 
+# ANSI color codes for terminal output
+COLORS = {
+    "RED": "\033[91m",
+    "GREEN": "\033[92m",
+    "YELLOW": "\033[93m",
+    "BLUE": "\033[94m",
+    "MAGENTA": "\033[95m",
+    "CYAN": "\033[96m",
+    "WHITE": "\033[97m",
+    "BOLD": "\033[1m",
+    "UNDERLINE": "\033[4m",
+    "RESET": "\033[0m"
+}
+
 # Load environment variables
 load_dotenv()
 
@@ -719,14 +733,45 @@ async def chat_with_ai(
     model: Optional[str] = None,
     system_prompt: Optional[str] = None,
     streaming: bool = False,
-    use_agent: bool = True,
+    use_agent: bool = False,
     tools: Optional[List[Tool]] = None
 ):
     """Process a chat message with AI."""
     try:
+        # Kiểm tra message có liên quan đến database không để chuẩn bị thông tin schema
+        is_db_related = any(keyword in message.lower() for keyword in 
+                           ["database", "sql", "query", "table", "schema", "select", "insert", 
+                           "update", "delete", "join", "where", "postgres", "postgresql"])
+        
+        db_schema_prompt = ""
+        # Lấy thông tin database schema nếu có database và câu hỏi liên quan đến database
+        if is_db_related:
+            try:
+                from app.ai.sql_tool import PostgreSQLTool
+                import os
+                
+                database_url = os.getenv("DATABASE_URL")
+                if database_url:
+                    logger.info("Fetching database schema for database-related question")
+                    pg_tool = PostgreSQLTool()
+                    schema_result = pg_tool.get_database_schema()
+                    
+                    if schema_result.get("success", False):
+                        schema_text = schema_result.get("schema", "")                        # Tạo prompt cho database schema
+                        schema_prompt_prefix = "\n\n## Database Information\nYou have access to a PostgreSQL database with the following schema:\n\n```\n"
+                        schema_prompt_suffix = "```\n\n### SQL Guidelines:\n1. Always analyze the schema first to understand the data structure\n2. Use appropriate SQL statements based on the task:\n   - SELECT: To retrieve data\n   - INSERT, UPDATE, DELETE: To modify data\n3. Always use proper SQL syntax and PostgreSQL features\n4. When writing SQL queries:\n   - Use explicit column names instead of * when possible\n   - Add proper JOIN conditions when joining tables\n   - Include appropriate WHERE clauses to filter data\n   - Use ORDER BY for sorting when needed\n   - Add LIMIT to control result size\n5. Format SQL queries properly with appropriate indentation and keywords in UPPERCASE\n6. Explain your SQL approach before providing the query\n\n### When answering database questions:\n1. Explain clearly which tables and columns are relevant to the question\n2. Break down complex requests into simpler steps\n3. Provide well-formatted SQL queries with comments explaining key parts\n4. Explain what the expected result would look like\n5. When suggesting data modifications, warn about potential data integrity risks"
+                        
+                        db_schema_prompt = schema_prompt_prefix + schema_text + schema_prompt_suffix
+                        logger.info("Database schema successfully added to context")
+                    else:
+                        logger.warning(f"Failed to get database schema: {schema_result.get('error', 'Unknown error')}")
+            except Exception as db_error:
+                logger.error(f"Error preparing database context: {db_error}")
+
         if use_agent:
-            print(f"Initializing LangChainAgent with model: {model or AI_MODEL}")
-            
+            agent_status = f"{COLORS['GREEN']}{COLORS['BOLD']}[AGENT MODE ACTIVE]{COLORS['RESET']}"
+            print(f"\n{agent_status} Initializing LangChainAgent with model: {model or AI_MODEL}")
+            logger.info(f"Using LangChainAgent for message: {message}")
             # Initialize agent with error handling
             try:
                 from app.ai.agent import LangChainAgent  # Import agent class
@@ -735,7 +780,7 @@ async def chat_with_ai(
                     system_prompt=system_prompt,
                     tools=tools or create_default_tools()
                 )
-                print("LangChainAgent initialized successfully")
+                print(f"{COLORS['GREEN']}✓ LangChainAgent initialized successfully{COLORS['RESET']}")
                 
                 # Stream or non-stream response
                 if streaming:
@@ -746,19 +791,27 @@ async def chat_with_ai(
                     async for response in agent.chat(message, streaming=False):
                         yield response
                 return  # Exit after successful agent processing
-                
             except Exception as agent_error:
                 logger.error(f"Agent error: {agent_error}")
-                print(f"Agent failed, falling back to non-agent mode: {agent_error}")
+                fallback_message = f"{COLORS['RED']}{COLORS['BOLD']}[AGENT FAILED]{COLORS['RESET']} Falling back to non-agent mode: {agent_error}"
+                print(fallback_message)
                 # Continue to non-agent mode below
 
         # Non-agent mode (fallback or original setting)
-        print("Using non-agent mode")
-        system_prompt = system_prompt or SYSTEM_PROMPTS["default_chat"]
+        non_agent_status = f"{COLORS['YELLOW']}{COLORS['BOLD']}[NON-AGENT MODE]{COLORS['RESET']}"
+        print(f"\n{non_agent_status} Using standard chat mode with model: {model or AI_MODEL}")
+        base_system_prompt = system_prompt or SYSTEM_PROMPTS["default_chat"]
+        
+        # Thêm thông tin database schema vào prompt nếu cần
+        if db_schema_prompt and is_db_related:
+            enhanced_system_prompt = base_system_prompt + db_schema_prompt
+            logger.info("Enhanced system prompt with database schema information")
+        else:
+            enhanced_system_prompt = base_system_prompt
         
         request = await create_ai_request(
             content=message,
-            system_prompt=system_prompt,
+            system_prompt=enhanced_system_prompt,
             model=model,
             temperature=0.7,
             max_tokens=2000,

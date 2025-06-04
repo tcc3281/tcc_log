@@ -257,7 +257,8 @@ export async function sendChatMessageStream(
   model?: string,
   systemPrompt?: string,
   onEvent?: StreamEventHandler,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  useAgent: boolean = false
 ): Promise<{ thinking: string; answer: string; fullContent: string }> {
   try {
     // Get the token from localStorage (same key as api.ts uses)
@@ -271,8 +272,7 @@ export async function sendChatMessageStream(
       model,
       systemPrompt: systemPrompt?.substring(0, 50) + '...'
     });
-    
-    const response = await fetch(`${baseURL}/ai/chat-stream`, {
+      const response = await fetch(`${baseURL}/ai/chat-stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -283,7 +283,8 @@ export async function sendChatMessageStream(
         history, // Send history as-is since it's already in correct format
         model,
         system_prompt: systemPrompt,
-        stream: true
+        stream: true,
+        use_agent: useAgent
       }),
       signal // Add the AbortSignal to allow request cancellation
     });
@@ -361,14 +362,16 @@ export async function sendChatMessage(
   message: string,
   history: ChatMessage[] = [],
   model?: string,
-  systemPrompt?: string
+  systemPrompt?: string,
+  useAgent: boolean = false
 ): Promise<ChatResponse> {
   try {
     const response = await api.post('/ai/chat', {
       message,
       history,
       model,
-      system_prompt: systemPrompt
+      system_prompt: systemPrompt,
+      use_agent: useAgent
     });
     return response.data;
   } catch (error) {

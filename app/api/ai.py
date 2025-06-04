@@ -75,6 +75,7 @@ class ChatRequest(BaseModel):
     model: Optional[str] = None
     system_prompt: Optional[str] = None
     stream: bool = False  # Enable streaming
+    use_agent: bool = False  # Whether to use agent mode
 
 class ChatResponse(BaseModel):
     content: str
@@ -129,8 +130,7 @@ async def chat(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Message cannot be empty"
             )
-        
-        # Convert history to the format expected by lm_studio
+          # Convert history to the format expected by lm_studio
         history = None
         if request.history:
             history = [
@@ -144,7 +144,8 @@ async def chat(
             history=history,
             model=request.model,
             system_prompt=request.system_prompt,
-            streaming=False
+            streaming=False,
+            use_agent=request.use_agent
         ):
             return response
             
@@ -368,13 +369,13 @@ async def chat_with_ai_stream(
                 in_think_tags = False
                 sent_data = []  # Track data sent to client for later reference
                 content_buffer = ""  # Buffer to detect and remove stats from content
-                
                 async for chunk in lm_studio.chat_with_ai(
                     message=request.message,
                     history=history,
                     model=request.model,
                     system_prompt=request.system_prompt,
-                    streaming=True
+                    streaming=True,
+                    use_agent=request.use_agent
                 ):
                     chunk_id += 1
                     
