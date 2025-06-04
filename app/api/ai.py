@@ -393,8 +393,42 @@ async def chat_with_ai_stream(
                             # If it's not valid JSON, treat it as regular content
                             pass
                     
-                    # Process regular content
-                    content = chunk  # chunk is already a string from chat_with_ai
+                    # Handle agent mode responses (dict) vs regular streaming (str)
+                    if isinstance(chunk, dict):
+                        # Agent mode or structured response
+                        if "content" in chunk:
+                            content = chunk["content"]
+                        elif "error" in chunk and chunk.get("error", False):
+                            # Error from agent
+                            error_data = {
+                                "type": "error",
+                                "content": chunk.get("content", "Unknown error"),
+                                "chunk_id": chunk_id
+                            }
+                            yield f"data: {json.dumps(error_data)}\n\n"
+                            continue
+                        else:
+                            # Skip unknown dict structure
+                            continue
+                    else:
+                        # Regular streaming mode - content is already a string
+                        content = str(chunk)
+                    
+                    # Skip empty content
+                    if not content or content.strip() == "":
+                        continue
+                    
+                    # Handle special agent indicators (like 🤔, 🔧, 📋, ✅)
+                    if content.strip().startswith(('🤔', '🔧', '📋', '✅')):
+                        # Send as thinking or tool usage info
+                        data = {
+                            "type": "thinking",
+                            "content": content,
+                            "chunk_id": chunk_id
+                        }
+                        sent_data.append(data)
+                        yield f"data: {json.dumps(data)}\n\n"
+                        continue
                     
                     # Check if the content contains a stats JSON object at the end
                     stats_index = content.find('{"type":"stats"')
