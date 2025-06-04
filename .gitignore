@@ -20,7 +20,14 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# Environment variables
 .env
+.env.*
+*.env
+**/.env
+**/.env.*
+**/*.env
 .venv
 env/
 venv/
