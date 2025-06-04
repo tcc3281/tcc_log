@@ -121,7 +121,10 @@ pip install -r requirements.txt
 ```
 
 ### 2. Cấu hình AI Services
-Tạo file `.env` trong thư mục gốc:
+
+Để cài đặt các file môi trường (.env) cần thiết cho dự án, vui lòng tham khảo [Hướng dẫn Thiết lập Môi trường](docs/ENVIRONMENT_SETUP_GUIDE.md) chi tiết.
+
+Các biến môi trường chính cần thiết lập:
 ```env
 # Database
 DATABASE_URL=postgresql://user:password@localhost:5432/journal_db
