@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import asyncio
 
+
 # LangChain imports
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage as LCMessage
@@ -696,100 +697,6 @@ async def query_lm_studio_stream(request: AIRequest):
         yield f"Error: {str(e)}"
 
 # Agent functionality (simplified, keeping only what's actually used)
-class LangChainAgent:
-    """Simplified LangChain Agent class"""
-    def __init__(
-        self,
-        model_name: str = AI_MODEL,
-        temperature: float = DEFAULT_TEMPERATURE,
-        max_tokens: int = DEFAULT_MAX_TOKENS,
-        tools: Optional[List[Tool]] = None,
-        system_prompt: Optional[str] = None
-    ):
-        self.model_name = model_name
-        self.temperature = temperature
-        self.max_tokens = max_tokens
-        self.tools = tools or []
-        self.system_prompt = system_prompt or SYSTEM_PROMPTS["default_chat"]
-        
-        # Initialize memory
-        self.memory = ConversationBufferMemory(
-            memory_key="chat_history",
-            return_messages=True
-        )
-        
-        # Initialize LLM
-        self.llm = get_chatopen_ai_instance(self.model_name, self.temperature, self.max_tokens)
-        
-        # Create prompt template
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system", self.system_prompt),
-            MessagesPlaceholder(variable_name="chat_history"),
-            ("human", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad"),
-        ])
-        
-        # Create agent and executor
-        self.agent = create_openai_functions_agent(
-            llm=self.llm,
-            tools=self.tools,
-            prompt=self.prompt
-        )
-        
-        self.agent_executor = AgentExecutor(
-            agent=self.agent,
-            tools=self.tools,
-            memory=self.memory,
-            verbose=True
-        )
-    
-    async def chat(self, message: str, streaming: bool = False):
-        """Process a chat message with the agent."""
-        try:
-            if streaming:
-                # Stream the response
-                collected_content = ""
-                async for chunk in self.agent_executor.astream({"input": message}):
-                    if "output" in chunk:
-                        content = chunk["output"]
-                        collected_content += content
-                        yield content
-                
-                # Add to memory
-                self.memory.chat_memory.add_user_message(message)
-                self.memory.chat_memory.add_ai_message(collected_content)
-            else:
-                # Get complete response
-                response = await self.agent_executor.ainvoke({"input": message})
-                
-                # Add to memory
-                self.memory.chat_memory.add_user_message(message)
-                self.memory.chat_memory.add_ai_message(response["output"])
-                
-                yield {
-                    "content": response["output"],
-                    "model": self.model_name,
-                    "usage": None  # LangChain doesn't provide usage stats
-                }
-        
-        except Exception as e:
-            logger.error(f"Error in agent chat: {e}")
-            error_msg = str(e)
-            if "Client disconnected" in error_msg:
-                error_msg = "The response took too long. Try asking a shorter question."
-            
-            if streaming:
-                yield f"Error: {error_msg}"
-            else:
-                yield {
-                    "content": f"Error: {error_msg}",
-                    "model": self.model_name,
-                    "error": True
-                }
-    
-    def clear_memory(self):
-        """Clear the conversation memory"""
-        self.memory.clear()
 
 def create_default_tools() -> List[Tool]:
     """Create default tools for the agent"""
@@ -812,65 +719,69 @@ async def chat_with_ai(
     model: Optional[str] = None,
     system_prompt: Optional[str] = None,
     streaming: bool = False,
-    use_agent: bool = False,
+    use_agent: bool = True,
     tools: Optional[List[Tool]] = None
 ):
     """Process a chat message with AI."""
-    if use_agent:
-        # Create agent instance
-        agent = LangChainAgent(
-            model_name=model or AI_MODEL,
-            system_prompt=system_prompt,
-            tools=tools or create_default_tools()
-        )
-        
-        # Use agent for chat
-        if streaming:
-            async for response in agent.chat(message, streaming=True):
-                yield response
-        else:
-            async for response in agent.chat(message, streaming=False):
-                yield response
-    else:
-        # Use simplified chat implementation
+    try:
+        if use_agent:
+            print(f"Initializing LangChainAgent with model: {model or AI_MODEL}")
+            
+            # Initialize agent with error handling
+            try:
+                from app.ai.agent import LangChainAgent  # Import agent class
+                agent = LangChainAgent(
+                    model_name=model or AI_MODEL,
+                    system_prompt=system_prompt,
+                    tools=tools or create_default_tools()
+                )
+                print("LangChainAgent initialized successfully")
+                
+                # Stream or non-stream response
+                if streaming:
+                    async for chunk in agent.agent_executor.astream({"input": message}):
+                        if "output" in chunk:
+                            yield chunk["output"]
+                else:
+                    async for response in agent.chat(message, streaming=False):
+                        yield response
+                return  # Exit after successful agent processing
+                
+            except Exception as agent_error:
+                logger.error(f"Agent error: {agent_error}")
+                print(f"Agent failed, falling back to non-agent mode: {agent_error}")
+                # Continue to non-agent mode below
+
+        # Non-agent mode (fallback or original setting)
+        print("Using non-agent mode")
         system_prompt = system_prompt or SYSTEM_PROMPTS["default_chat"]
         
-        try:
-            request = await create_ai_request(
-                content=message,
-                system_prompt=system_prompt,
-                model=model,
-                temperature=0.7,
-                max_tokens=2000,  # Larger context for chat
-                history=history
-            )
-            
-            if streaming:
-                # Stream the AI response
-                async for chunk in query_lm_studio_stream(request):
-                    # Check if this is a stats message (JSON string)
-                    if isinstance(chunk, str) and chunk.startswith('{"type":"stats"'):
-                        yield chunk  # Pass through the stats data
-                    else:
-                        yield chunk  # Pass through regular content
-            else:
-                # Query the AI with retry logic
-                response = await query_lm_studio(request)
-                yield {
-                    "content": response.content,
-                    "model": response.model,
-                    "usage": response.usage
-                }
+        request = await create_ai_request(
+            content=message,
+            system_prompt=system_prompt,
+            model=model,
+            temperature=0.7,
+            max_tokens=2000,
+            history=history
+        )
         
-        except Exception as e:
-            logger.error(f"Error in chat: {e}")
-            error_msg = str(e)
-            if "Client disconnected" in error_msg:
-                error_msg = "The response took too long. Try asking a shorter question."
-            
+        if streaming:
+            async for chunk in query_lm_studio_stream(request):
+                yield chunk if not (isinstance(chunk, str) and chunk.startswith('{"type":"stats"')) else chunk
+        else:
+            response = await query_lm_studio(request)
             yield {
-                "content": f"Error: {error_msg}",
-                "model": model or AI_MODEL,
-                "error": True
+                "content": response.content,
+                "model": response.model,
+                "usage": response.usage
             }
+            
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        error_msg = "The response took too long. Try asking a shorter question." if "Client disconnected" in str(e) else str(e)
+        yield {
+            "content": f"Error: {error_msg}",
+            "model": model or AI_MODEL,
+            "error": True
+        }
 from typing import List, Dict, Optional, Any
