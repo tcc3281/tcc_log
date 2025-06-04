@@ -63,9 +63,12 @@ class LangChainAgent:
             return_messages=True
         )
         
-        # Only try to add SQL tools if any tools were specified
-        if tools is None:
-            self.__add__postgre_sql_tool()  # Add PostgreSQL tool if available
+        # Initialize tools list if None
+        if self.tools is None:
+            self.tools = []
+        
+        # Always try to add SQL tools
+        self.__add__postgre_sql_tool()  # Add PostgreSQL tool if available
         
         # Log system_prompt again after adding SQL tools
         logger.debug(f"System prompt after SQL tools: {self.system_prompt[:500]}...")
@@ -206,7 +209,7 @@ class LangChainAgent:
         return schema_text.strip()
 
     def _get_sql_prompt(self, schema_text: str) -> str:
-        """Create specialized prompt for database interaction"""
+        """Create specialized prompt for database interaction with structured output format"""
         # Check if schema is empty and handle that case
         if not schema_text or schema_text.strip() == "":
             safe_schema_text = "No tables found in the database."
@@ -220,45 +223,181 @@ class LangChainAgent:
         logger.debug(f"Schema text (first 100 chars): {schema_text[:100] if schema_text else 'Empty'}")
         logger.debug(f"Escaped schema text (first 100 chars): {safe_schema_text[:100] if safe_schema_text else 'Empty'}")
         
-        # Construct the SQL prompt
-        sql_prompt = "\n\n## Database Access\n"
-        sql_prompt += "You have access to a PostgreSQL database with the following schema:\n\n"
-        sql_prompt += "```\n"
-        sql_prompt += safe_schema_text
-        sql_prompt += "\n```\n\n"
-        
-        # Add SQL guidelines (ensure no unescaped curly braces here)
-        sql_prompt += """
-    ### Available Database Tools:
-    1. `database_query`: Execute SQL queries on the PostgreSQL database
-    2. `get_database_schema`: Get the full database schema
-    3. `analyze_query`: Analyze a SQL query for issues without executing it
-    4. `get_table_info`: Get detailed information about a specific table
-    5. `inspect_data`: Get a sample of data from a table
-    6. `get_table_relationships`: Get all relationships between tables
-    7. `get_table_sizes`: Get information about the data size of tables
+        # Enhanced system prompt for SQL generation with backend execution
+        database_prompt = """
 
-    ### SQL Guidelines:
-    1. Always analyze the schema first to understand the data structure
-    2. Use appropriate SQL statements based on the task:
-    - SELECT: To retrieve data
-    - INSERT, UPDATE, DELETE: To modify data
-    3. Always use proper SQL syntax and PostgreSQL features
-    4. When writing SQL queries:
-    - Use explicit column names instead of * when possible
-    - Add proper JOIN conditions when joining tables
-    - Include appropriate WHERE clauses to filter data
-    - Use ORDER BY for sorting when needed
-    - Add LIMIT to control result size
-    5. Format SQL queries properly with appropriate indentation
-    """
-        # Escape curly braces in the entire sql_prompt
-        sql_prompt = sql_prompt.replace("{", "{{").replace("}", "}}")
+## Database Access
+You have access to a PostgreSQL database with the following schema:
+
+```
+{schema_text}
+```
+
+### CRITICAL RULES:
+
+1. **NEVER CREATE FAKE DATA** - You do NOT execute queries yourself
+2. **GENERATE SQL ONLY** - Provide SQL queries that backend will execute automatically
+3. **STRUCTURED OUTPUT** - Use the exact format below for SQL generation
+4. **NO FAKE RESULTS** - Never show made-up counts, data, or results
+
+### WORKFLOW:
+- You provide SQL queries in the specified format
+- Backend automatically detects and executes your SQL
+- Real results are added to the conversation automatically
+- You explain what the query does, but don't invent results
+
+### SQL GENERATION FORMAT:
+
+For database questions, follow this exact structure:
+
+**Step 1: Query Analysis**
+
+### QUERY_INTENT: [brief description of what user wants]
+SQL_NEEDED: [yes/no]
+
+
+**Step 2: SQL Generation** (if SQL_NEEDED = yes)
+```
+[YOUR SQL QUERY HERE]
+```
+
+**Step 3: Expected Result Description**
+
+EXPECTED_RESULT: [Describe what kind of data this query should return].
+
+EXPLANATION: [Explain the SQL logic and approach].
+
+
+### EXAMPLES:
+
+**Example 1 - Count Query:**
+
+### QUERY_INTENT: Count total number of users
+SQL_NEEDED: yes.
+
+```
+SELECT COUNT(*) as total_users FROM users;
+```
+
+EXPECTED_RESULT: Single number showing total count of users.
+
+EXPLANATION: Simple COUNT query to get total number of user records.
+
+**Example 2 - Data Retrieval:**
+
+### QUERY_INTENT: Show recent user registrations
+SQL_NEEDED: yes
+
+```
+SELECT user_id, username, email, created_at\nFROM users\nORDER BY created_at DESC\nLIMIT 10;
+```
+
+
+EXPECTED_RESULT: Table showing 10 most recent users with their details.
+
+EXPLANATION: SELECT query with ORDER BY to get newest users first, limited to 10 rows.
+
+
+**Example 3 - Schema Information:**
+
+### QUERY_INTENT: Show available tables
+SQL_NEEDED: yes.
+
+```
+SELECT table_name, table_type\nFROM information_schema.tables\nWHERE table_schema = 'public'\nORDER BY table_name;
+```
+
+
+EXPECTED_RESULT: List of all public tables in the database.
+
+EXPLANATION: Query information_schema to get table metadata.
+
+
+### PROHIBITED BEHAVIORS:
+
+❌ **NEVER do this:**
+```
+The database contains these users:
+- John (john@email.com) 
+- Jane (jane@email.com)
+```
+*This is FAKE DATA - you don't know actual data!*
+
+❌ **NEVER do this:**
+```
+There are 10 users in the system.
+Query executed successfully. Found 10 users.
+```
+*This is PRETENDING to execute queries!*
+
+❌ **NEVER do this:**
+```
+SELECT COUNT(*) FROM users;
+Result: 5 users found
+```
+*Don't show fake execution results!*
+
+### CORRECT BEHAVIOR:
+
+✅ **DO this:**
+### QUERY_INTENT: Count total number of users
+SQL_NEEDED: yes.
+
+
+```
+SELECT COUNT(*) as total_users FROM users;
+```
+
+EXPECTED_RESULT: Single number showing total count of users.
+
+EXPLANATION: Simple COUNT query to get total number of user records.
+
+
+*Then wait for backend to execute and add real results*
+
+### SQL BEST PRACTICES:
+
+1. **Query Structure:**
+   - Use explicit column names instead of SELECT *
+   - Add ORDER BY for consistent sorting  
+   - Include LIMIT for large result sets (default: 10-20 rows)
+   - Use proper PostgreSQL syntax
+
+2. **Comments:**
+   - Always add meaningful comments to SQL
+   - Explain complex JOINs or WHERE conditions
+   - Describe the business purpose
+
+3. **Formatting:**
+   - Use proper indentation and line breaks
+   - UPPERCASE for SQL keywords (SELECT, FROM, WHERE, etc.)
+   - Consistent naming conventions
+
+4. **Safety:**
+   - Be careful with UPDATE/DELETE queries
+   - Consider adding WHERE clauses for data safety
+   - Use appropriate data types in comparisons
+
+### PARSING GUIDELINES:
+
+1. **Always use the exact format structure**
+2. **Consistent keywords: QUERY_INTENT, SQL_NEEDED, EXPECTED_RESULT, EXPLANATION**
+3. **Place SQL in ```sql code blocks for easy extraction**
+4. **No execution attempts - only generation**
+5. **Clear separation between analysis and SQL**
+
+### REMEMBER:
+- Your job is to GENERATE SQL, not execute it
+- Backend will automatically detect and run your SQL
+- Never show fake results or pretend to execute
+- Focus on correct SQL syntax and logic
+- Explain your approach clearly
+"""
         
-        # Log final sql_prompt
-        logger.debug(f"Final SQL prompt (first 100 chars): {sql_prompt[:100]}...")
+        # Format the template with the schema
+        formatted_prompt = database_prompt.format(schema_text=safe_schema_text)
         
-        return sql_prompt
+        return formatted_prompt
 
     def _create_dummy_schema(self) -> str:
         """Create a dummy schema when no tables are available in the database"""
@@ -456,6 +595,63 @@ class LangChainAgent:
         except Exception as e:
             logger.error(f"Error in direct streaming: {e}")
             yield f"Streaming error: {str(e)}"
+
+    async def chat_with_agent_streaming(self, message: str):
+        """Stream agent responses while maintaining access to tools"""
+        try:
+            # Use astream_events for more granular control over streaming
+            collected_tokens = []
+            tool_usage_messages = []
+            
+            async for event in self.agent_executor.astream_events(
+                {"input": message}, 
+                version="v1"
+            ):
+                event_type = event.get("event", "")
+                event_data = event.get("data", {})
+                
+                # Handle different event types
+                if event_type == "on_chat_model_stream":
+                    # Direct streaming from the LLM - this gives us real token streaming
+                    chunk = event_data.get("chunk", {})
+                    if hasattr(chunk, 'content') and chunk.content:
+                        collected_tokens.append(chunk.content)
+                        yield chunk.content
+                elif event_type == "on_tool_start":
+                    # Tool execution started
+                    tool_name = event_data.get("input", {}).get("tool", "unknown")
+                    tool_msg = f"\n🔧 Using tool: {tool_name}...\n"
+                    tool_usage_messages.append(tool_msg)
+                    yield tool_msg
+                elif event_type == "on_tool_end":
+                    # Tool execution completed
+                    tool_result = event_data.get("output", "")
+                    if tool_result:
+                        result_preview = str(tool_result)[:200] + "..." if len(str(tool_result)) > 200 else str(tool_result)
+                        tool_result_msg = f"📋 Tool result: {result_preview}\n"
+                        tool_usage_messages.append(tool_result_msg)
+                        yield tool_result_msg
+                elif event_type == "on_agent_finish":
+                    # Agent finished - get final output if no tokens were streamed
+                    output = event_data.get("output", "")
+                    if output and not collected_tokens:
+                        # If no streaming tokens were captured, yield the final output
+                        yield output
+                    elif output and collected_tokens:
+                        # Check if there's additional content not yet streamed
+                        streamed_content = "".join(collected_tokens)
+                        if len(output) > len(streamed_content):
+                            remaining_content = output[len(streamed_content):]
+                            if remaining_content.strip():
+                                yield remaining_content
+            
+            # If no content was yielded at all, provide a fallback
+            if not collected_tokens and not tool_usage_messages:
+                yield "✅ Task completed."
+                        
+        except Exception as e:
+            logger.error(f"Error in agent streaming: {e}")
+            yield f"Agent error: {str(e)}"
 
 class AgentStreamingCallbackHandler(BaseCallbackHandler):
     """Custom callback handler to capture streaming tokens from agent LLM calls"""

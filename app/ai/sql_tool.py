@@ -25,51 +25,51 @@ class PostgreSQLTool:
     def connect(self):
         """Establish a connection to the PostgreSQL database."""
         try:
-            # When using psycopg2, it's better to parse the connection URL manually
-            # if it contains special characters like ? in the password
+            # Handle URL encoded characters in the database URL
+            import urllib.parse
+            
             if self.database_url.startswith('postgresql'):
                 try:
-                    # Try to connect directly with the URL first
-                    self.connection = psycopg2.connect(self.database_url, cursor_factory=RealDictCursor)
+                    # First, decode any URL encoded characters (like %3F -> ?)
+                    decoded_url = urllib.parse.unquote(self.database_url)
+                    
+                    # Convert postgresql+psycopg2:// to postgresql:// for psycopg2 compatibility
+                    if decoded_url.startswith('postgresql+psycopg2://'):
+                        decoded_url = decoded_url.replace('postgresql+psycopg2://', 'postgresql://')
+                        logger.info("Converted postgresql+psycopg2:// to postgresql:// for compatibility")
+                    
+                    # Try to connect directly with the decoded URL first
+                    self.connection = psycopg2.connect(decoded_url, cursor_factory=RealDictCursor)
+                    logger.info(f"Connected to database using decoded URL")
                 except Exception as e:
+                    logger.warning(f"Direct connection failed: {e}, trying to parse URL manually...")
                     # If that fails, try to parse the URL and connect with parameters
-                    if "missing '='" in str(e) and "?" in self.database_url:
-                        # Extract connection parameters from the URL
-                        # Format: postgresql+psycopg2://user:password@host:port/dbname
-                        parts = self.database_url.split('://', 1)
-                        if len(parts) == 2:
-                            scheme = parts[0]
-                            rest = parts[1]
-                            
-                            # Find user:password
-                            auth_host_split = rest.split('@', 1)
-                            if len(auth_host_split) == 2:
-                                auth, host_rest = auth_host_split
-                                user_pass = auth.split(':', 1)
-                                if len(user_pass) == 2:
-                                    username, password = user_pass
-                                    # Construct connection parameters
-                                    conn_params = {
-                                        'user': username,
-                                        'password': password,
-                                        'host': host_rest.split(':', 1)[0] if ':' in host_rest else host_rest.split('/')[0],
-                                        'port': host_rest.split(':', 1)[1].split('/')[0] if ':' in host_rest else '5432',
-                                        'dbname': host_rest.split('/')[-1] if '/' in host_rest else 'postgres'
-                                    }
-                                    self.connection = psycopg2.connect(**conn_params, cursor_factory=RealDictCursor)
-                                else:
-                                    raise ValueError(f"Could not parse authentication part of the URL: {auth}")
-                            else:
-                                raise ValueError(f"Could not parse URL: {self.database_url}")
-                        else:
-                            raise e
-                    else:
-                        raise e
+                    original_url = urllib.parse.unquote(self.database_url)
+                    
+                    # Remove the +psycopg2 part if present
+                    if original_url.startswith('postgresql+psycopg2://'):
+                        original_url = original_url.replace('postgresql+psycopg2://', 'postgresql://')
+                    
+                    # Parse the URL components
+                    parsed = urllib.parse.urlparse(original_url)
+                    
+                    # Extract connection parameters
+                    conn_params = {
+                        'user': parsed.username,
+                        'password': parsed.password,
+                        'host': parsed.hostname,
+                        'port': parsed.port or 5432,
+                        'dbname': parsed.path.lstrip('/') or 'postgres'
+                    }
+                    
+                    logger.info(f"Connecting with params: user={conn_params['user']}, host={conn_params['host']}, port={conn_params['port']}, dbname={conn_params['dbname']}")
+                    self.connection = psycopg2.connect(**conn_params, cursor_factory=RealDictCursor)
+                    logger.info("Connected to database using parsed parameters")
             else:
                 # Not a URL format, assume it's already in connection parameters format
                 self.connection = psycopg2.connect(self.database_url, cursor_factory=RealDictCursor)
             
-            logger.info("Connected to the PostgreSQL database.")
+            logger.info("Successfully connected to the PostgreSQL database.")
         except Exception as e:
             logger.error(f"Failed to connect to the database: {e}")
             raise

@@ -727,6 +727,154 @@ def create_default_tools() -> List[Tool]:
         )
     ]
 
+async def _post_process_sql_execution(content: str, streaming: bool = False):
+    """Post-process agent response to execute SQL code if provided but not executed"""
+    try:
+        # Import the SQL tool for executing queries
+        from app.ai.sql_tool import PostgreSQLTool
+        import re
+        import os
+        
+        logger.info(f"🔍 Starting SQL post-processing, content length: {len(content)}")
+        
+        # Initialize SQL tool if needed for post-processing
+        database_url = os.getenv("DATABASE_URL")
+        if not database_url:
+            logger.warning("No DATABASE_URL found, skipping SQL post-processing")
+            return None
+            
+        sql_tool = PostgreSQLTool(database_url)
+        
+        # Look for SQL queries in the new format from model
+        # Priority order: proper code blocks first, then direct SQL patterns
+        sql_patterns = [
+            r'```\s*\n([^`]+)\n```',  # ``` SQL QUERY ``` (new format without sql tag)
+            r'```sql\s*\n([^`]+)\n```',  # ```sql SELECT ... ``` (old format)
+            r'```([^`]+)```',  # ```SQL QUERY``` (single line)
+        ]
+        
+        # Check if response already contains actual results (not just fake numbers)
+        has_real_results = any(indicator in content.lower() for indicator in [
+            'rows returned', 'query executed successfully', 'actual count', 'real count',
+            'query result:', 'execution completed', 'data retrieved'
+        ])
+        
+        # Also check for specific database execution indicators
+        real_db_indicators = [
+            '🔧 post-processed sql execution', '✅ query result:', 'count:',
+            'tool result:', '📋 result:', 'database connection'
+        ]
+        
+        has_real_results = has_real_results or any(indicator in content.lower() for indicator in real_db_indicators)
+        
+        logger.info(f"🔍 has_real_results: {has_real_results}")
+        
+        # Extract and execute SQL queries from model response
+        logger.info("🔍 Extracting SQL queries from model response...")
+        
+        sql_executed = False
+        executed_queries = set()  # Track executed queries to avoid duplicates
+        
+        for i, pattern in enumerate(sql_patterns):
+            logger.debug(f"🔍 Checking pattern {i+1}: {pattern}")
+            matches = re.findall(pattern, content, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+            logger.debug(f"🔍 Pattern {i+1} matches: {len(matches)}")
+            
+            for j, match in enumerate(matches):
+                # Extract SQL query
+                if isinstance(match, tuple):
+                    sql_query = match[0] if match[0] else (match[1] if len(match) > 1 else "")
+                else:
+                    sql_query = match
+                
+                # Clean and validate SQL query
+                sql_query = _clean_sql_query(sql_query)
+                if not sql_query:
+                    continue
+                
+                # Skip if we already executed this query
+                query_key = sql_query.strip().lower().replace(' ', '').replace('\n', '')
+                if query_key in executed_queries:
+                    logger.debug(f"🔍 Skipping duplicate query: {sql_query[:50]}...")
+                    continue
+                
+                # Validate SQL query
+                if not _is_valid_sql_query(sql_query):
+                    logger.warning(f"🔍 Skipping invalid query: '{sql_query[:50]}...'")
+                    continue
+                
+                try:
+                    logger.info(f"🔧 Executing SQL: {sql_query[:100]}...")
+                    executed_queries.add(query_key)
+                    
+                    # Execute the query
+                    result = sql_tool.execute_query(sql_query)
+                    
+                    if result.get("success", False):
+                        query_result = result.get("result", [])
+                        row_count = result.get("row_count", 0)
+                        
+                        # Print the actual result to console for debugging
+                        print(f"\n{COLORS['GREEN']}🔧 Post-processed SQL execution:{COLORS['RESET']}")
+                        print(f"{COLORS['CYAN']}Query: {sql_query}{COLORS['RESET']}")
+                        print(f"{COLORS['GREEN']}✅ Result: {row_count} rows{COLORS['RESET']}")
+                        
+                        # Return structured result for API to send to frontend
+                        real_result = {
+                            "type": "sql_execution",
+                            "query": sql_query,
+                            "success": True,
+                            "row_count": row_count,
+                            "result": query_result
+                        }
+                        
+                        if query_result:
+                            if len(query_result) == 1 and len(query_result[0]) == 1:
+                                # Single value result (like COUNT)
+                                value = list(query_result[0].values())[0]
+                                print(f"{COLORS['YELLOW']}REAL Count: {value} (overriding any fake results){COLORS['RESET']}")
+                                real_result["value"] = value
+                                real_result["message"] = f"**✅ REAL Result:** {value} (actual count from database)"
+                            else:
+                                # Multiple rows/columns - format as nice table
+                                print(f"{COLORS['WHITE']}Data Preview:{COLORS['RESET']}")
+                                
+                                # Format as markdown table
+                                formatted_table = _format_query_results_as_table(query_result)
+                                real_result["message"] = f"**✅ REAL Results:** {row_count} rows\n\n{formatted_table}"
+                                
+                                # Console preview (first 3 rows only)
+                                for k, row in enumerate(query_result[:3]):
+                                    row_dict = dict(row)
+                                    # Hide sensitive data in console
+                                    if 'password_hash' in row_dict:
+                                        row_dict['password_hash'] = '[HIDDEN]'
+                                    row_text = f"Row {k+1}: {row_dict}"
+                                    print(f"  • {row_text}")
+                                if len(query_result) > 3:
+                                    extra_text = f"... and {len(query_result) - 3} more rows"
+                                    print(f"  {extra_text}")
+                        
+                        logger.info("✅ SQL execution successful, returning first result")
+                        sql_executed = True
+                        return real_result  # Return first successful result
+                    else:
+                        logger.error(f"SQL execution failed: {result.get('error', 'Unknown error')}")
+                        
+                except Exception as e:
+                    logger.error(f"Error executing SQL from agent response: {e}")
+        
+        if not sql_executed:
+            logger.warning("🔍 No valid SQL queries found or executed")
+        
+        return None
+                        
+    except Exception as e:
+        logger.warning(f"Error in SQL post-processing: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 async def chat_with_ai(
     message: str,
     history: List[Dict[str, str]] = None,
@@ -778,17 +926,27 @@ async def chat_with_ai(
                 agent = LangChainAgent(
                     model_name=model or AI_MODEL,
                     system_prompt=system_prompt,
-                    tools=tools or create_default_tools()
+                    tools=tools  # Pass tools as-is, don't fallback to default tools
                 )
                 print(f"{COLORS['GREEN']}✓ LangChainAgent initialized successfully{COLORS['RESET']}")
                 
                 # Stream or non-stream response using enhanced streaming
                 if streaming:
                     print(f"{COLORS['CYAN']}🌊 Starting streaming response...{COLORS['RESET']}")
-                    # Use direct streaming method that bypasses agent limitations
-                    async for chunk in agent.chat_with_direct_streaming(message):
+                    # Use agent streaming method that maintains tool access
+                    collected_content = ""
+                    async for chunk in agent.chat_with_agent_streaming(message):
                         if chunk:  # Only yield non-empty chunks
+                            collected_content += chunk
                             yield chunk
+                    
+                    # Post-process SQL execution after all chunks are collected
+                    real_sql_result = await _post_process_sql_execution(collected_content, streaming=True)
+                    if real_sql_result and real_sql_result.get("success", False):
+                        # Yield real result as a special message
+                        real_message = real_sql_result.get("message", "")
+                        if real_message:
+                            yield f"\n\n{real_message}"
                 else:
                     print(f"{COLORS['BLUE']}💬 Processing non-streaming response...{COLORS['RESET']}")
                     # Use non-streaming mode
@@ -824,15 +982,34 @@ async def chat_with_ai(
         )
         
         if streaming:
-            async for chunk in query_lm_studio_stream(request):
-                yield chunk if not (isinstance(chunk, str) and chunk.startswith('{"type":"stats"')) else chunk
+            # Add SQL post-processing for agent mode
+            if use_agent:
+                collected_content = ""
+                async for chunk in query_lm_studio_stream(request):
+                    if isinstance(chunk, str) and not chunk.startswith('{"type":"stats"'):
+                        collected_content += chunk
+                        yield chunk
+                    else:
+                        yield chunk
+                
+                # Post-process to execute SQL if agent provided code but didn't execute it
+                await _post_process_sql_execution(collected_content, streaming=True)
+            else:
+                async for chunk in query_lm_studio_stream(request):
+                    yield chunk if not (isinstance(chunk, str) and chunk.startswith('{"type":"stats"')) else chunk
         else:
             response = await query_lm_studio(request)
-            yield {
+            result = {
                 "content": response.content,
                 "model": response.model,
                 "usage": response.usage
             }
+            
+            # Post-process SQL for agent mode
+            if use_agent:
+                await _post_process_sql_execution(response.content, streaming=False)
+            
+            yield result
             
     except Exception as e:
         logger.error(f"Chat error: {e}")
@@ -862,7 +1039,7 @@ async def chat_with_ai_agent_enhanced_streaming(
         agent = LangChainAgent(
             model_name=model or AI_MODEL,
             system_prompt=system_prompt,
-            tools=tools or create_default_tools()
+            tools=tools  # Pass tools as-is, don't fallback to default tools
         )
         print(f"{COLORS['GREEN']}✓ Enhanced streaming agent initialized{COLORS['RESET']}")
         print(f"{COLORS['CYAN']}🔍 Starting detailed streaming...{COLORS['RESET']}")
@@ -876,4 +1053,122 @@ async def chat_with_ai_agent_enhanced_streaming(
         logger.error(f"Enhanced agent streaming error: {e}")
         error_msg = f"Enhanced streaming error: {str(e)}"
         yield error_msg
-from typing import List, Dict, Optional, Any
+
+def _clean_sql_query(sql_query: str):
+    """Clean and extract valid SQL query from text"""
+    if not sql_query:
+        return None
+    
+    # Remove leading/trailing whitespace
+    sql_query = sql_query.strip()
+    
+    # Remove comments and empty lines
+    lines = []
+    for line in sql_query.split('\n'):
+        line = line.strip()
+        if line and not line.startswith('--'):
+            lines.append(line)
+    
+    if not lines:
+        return None
+    
+    # Join lines and clean up
+    cleaned = ' '.join(lines)
+    
+    # Remove extra whitespace
+    cleaned = ' '.join(cleaned.split())
+    
+    # Ensure semicolon at end if missing
+    if cleaned and not cleaned.endswith(';'):
+        cleaned += ';'
+    
+    logger.debug(f"Cleaned SQL: '{cleaned}'")
+    return cleaned
+
+def _is_valid_sql_query(sql_query: str) -> bool:
+    """Validate if the string is a proper SQL query"""
+    if not sql_query or len(sql_query) < 8:
+        return False
+    
+    # Check for SQL keywords at start
+    sql_keywords = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'SHOW', 'DESCRIBE', 'EXPLAIN']
+    first_word = sql_query.strip().split()[0].upper()
+    
+    if first_word not in sql_keywords:
+        return False
+    
+    # Skip example or placeholder queries
+    forbidden_words = ['example', 'placeholder', 'your_table', 'your_column', 'sample_data']
+    if any(word in sql_query.lower() for word in forbidden_words):
+        return False
+    
+    # Skip if it contains explanatory text mixed with SQL
+    explanatory_words = ['need to', 'according to', 'explanation', 'this query', 'the result']
+    if any(phrase in sql_query.lower() for phrase in explanatory_words):
+        return False
+    
+    return True
+
+def _format_query_results_as_table(query_results):
+    """Format SQL query results as a nice markdown table"""
+    if not query_results:
+        return "*No data found*"
+    
+    # Get column names from first row
+    first_row = dict(query_results[0])
+    columns = list(first_row.keys())
+    
+    # Filter out sensitive columns for display
+    sensitive_columns = ['password_hash', 'password', 'token', 'secret']
+    display_columns = [col for col in columns if not any(sens in col.lower() for sens in sensitive_columns)]
+    
+    # Limit number of columns for readability (max 6)
+    if len(display_columns) > 6:
+        display_columns = display_columns[:5] + ['...more']
+    
+    # Create markdown table header
+    table_lines = []
+    table_lines.append("| " + " | ".join(display_columns) + " |")
+    table_lines.append("| " + " | ".join(["---"] * len(display_columns)) + " |")
+    
+    # Add rows (limit to 10 for readability)
+    max_rows = min(10, len(query_results))
+    for i in range(max_rows):
+        row = dict(query_results[i])
+        row_values = []
+        
+        for col in display_columns:
+            if col == '...more':
+                row_values.append(f"+{len(columns) - 5} cols")
+                continue
+                
+            value = row.get(col, '')
+            
+            # Format different data types
+            if value is None:
+                formatted_value = "*null*"
+            elif hasattr(value, 'strftime'):  # datetime objects
+                formatted_value = value.strftime("%Y-%m-%d %H:%M")
+            elif isinstance(value, str) and len(value) > 30:
+                formatted_value = value[:27] + "..."
+            elif isinstance(value, bool):
+                formatted_value = "✓" if value else "✗"
+            else:
+                formatted_value = str(value)
+            
+            # Escape markdown special characters
+            formatted_value = formatted_value.replace("|", "\\|").replace("\n", " ")
+            row_values.append(formatted_value)
+        
+        table_lines.append("| " + " | ".join(row_values) + " |")
+    
+    # Add summary if there are more rows
+    if len(query_results) > max_rows:
+        table_lines.append("")
+        table_lines.append(f"*Showing {max_rows} of {len(query_results)} total rows*")
+    
+    if len(columns) > len(display_columns):
+        hidden_cols = [col for col in columns if col not in display_columns]
+        table_lines.append(f"*Hidden columns: {', '.join(hidden_cols)}*")
+    
+    return "\n".join(table_lines)
