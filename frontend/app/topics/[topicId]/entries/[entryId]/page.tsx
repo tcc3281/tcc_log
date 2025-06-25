@@ -89,8 +89,7 @@ const EntryDetailPage = () => {
         
         // Fetch entry using multiple strategies if needed
         let entryData;
-        try {
-          // Primary approach: fetch through standard endpoint
+        try {          // Primary approach: fetch through standard endpoint
           const entryRes = await api.get(`/entries/${entryId}`);
           entryData = entryRes.data;
           console.log('Entry data retrieved successfully:', entryData);
@@ -99,8 +98,7 @@ const EntryDetailPage = () => {
           if (entryData.topic_id !== undefined && 
               entryData.topic_id !== null && 
               Number(entryData.topic_id) !== Number(topicId)) {
-            console.warn(`Entry belongs to topic ${entryData.topic_id}, not ${topicId}`);
-            // Try to get entry through topic-specific endpoint as fallback
+            console.warn(`Entry belongs to topic ${entryData.topic_id}, not ${topicId}`);            // Try to get entry through topic-specific endpoint as fallback
             const topicEntryRes = await api.get(`/topics/${topicId}/entries/${entryId}`);
             entryData = topicEntryRes.data;
           }
@@ -176,9 +174,7 @@ const EntryDetailPage = () => {
         mood,
         weather,
         is_public: isPublic,
-      });
-      
-      // Fetch the updated entry
+      });      // Fetch the updated entry
       const response = await api.get(`/entries/${entryId}`);
       setEntry(response.data);
       setIsEditing(false);
@@ -322,15 +318,16 @@ const EntryDetailPage = () => {
   const renderEditForm = () => (
     <div className="card p-6">
       <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Edit Entry</h2>
-      
-      {/* Hidden file input element */}
+        {/* Hidden file input element */}
       <input 
+        id="edit-file-upload"
         type="file" 
         ref={fileInputRef}
         onChange={handleFileUpload}
         multiple
         accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
         className="hidden"
+        aria-label="Upload files to entry"
       />
       
       <form onSubmit={handleUpdate} className="space-y-6">
@@ -372,7 +369,7 @@ const EntryDetailPage = () => {
             </div>
           </details>
               
-          <div style={{minHeight: "70vh"}} className="flex flex-col">
+          <div className="flex flex-col min-h-[70vh]">
             <MarkdownEditor 
               value={content}
               onChange={(value) => setContent(value)}
