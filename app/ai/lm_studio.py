@@ -2,7 +2,6 @@ import os
 import logging
 from typing import Optional, List, Dict, Any, Union
 import httpx
-import json
 import re
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -12,16 +11,7 @@ import asyncio
 # LangChain imports
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage as LCMessage
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnableConfig
-from langchain_core.callbacks.manager import CallbackManager
-from langchain_core.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.agents import AgentExecutor, create_openai_functions_agent
 from langchain_core.tools import Tool
-from langchain.memory import ConversationBufferMemory
-from langchain_core.prompts import MessagesPlaceholder
-
 # Import prompt manager
 from .prompt_manager import get_prompt_manager, get_system_prompt
 
@@ -48,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 # Default configuration
 DEFAULT_LM_STUDIO_BASE_URL = "http://127.0.0.1:1234/v1"
-DEFAULT_AI_MODEL = "lmstudio-community/Qwen2.5-7B-Instruct-GGUF"
+DEFAULT_AI_MODEL = "qwen/qwen3-1.7b"
 DEFAULT_MAX_TOKENS = 2000
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_MAX_INFERENCE_TIME = 60000  # Default 60 seconds in milliseconds
