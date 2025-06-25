@@ -12,8 +12,11 @@ fileConfig(config.config_file_name)
 # Debug the DATABASE_URL
 print("DATABASE_URL:", os.getenv('DATABASE_URL'))  # Add this line to debug
 
-# Set the database URL from the environment variable
-config.set_main_option('sqlalchemy.url', os.getenv('DATABASE_URL'))
+# Comment out the environment variable override to use alembic.ini URL
+# Set the database URL from the environment variable only if it exists and is valid
+# database_url = os.getenv('DATABASE_URL')
+# if database_url and not ('?' in database_url and '%3F' not in database_url):
+#     config.set_main_option('sqlalchemy.url', database_url)
 
 # Add your models' MetaData object here for 'autogenerate' support
 from app.models import Base
