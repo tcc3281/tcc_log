@@ -10,11 +10,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import mermaid from 'mermaid';
 import 'katex/dist/katex.min.css';
-<<<<<<< HEAD
 import EntryAnalysis from '../../../../../components/AI/EntryAnalysis';
 import WritingImprover from '../../../../../components/AI/WritingImprover';
-=======
->>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
 
 // Initialize mermaid
 if (typeof window !== 'undefined') {
@@ -92,8 +89,7 @@ const EntryDetailPage = () => {
         
         // Fetch entry using multiple strategies if needed
         let entryData;
-        try {
-          // Primary approach: fetch through standard endpoint
+        try {          // Primary approach: fetch through standard endpoint
           const entryRes = await api.get(`/entries/${entryId}`);
           entryData = entryRes.data;
           console.log('Entry data retrieved successfully:', entryData);
@@ -102,8 +98,7 @@ const EntryDetailPage = () => {
           if (entryData.topic_id !== undefined && 
               entryData.topic_id !== null && 
               Number(entryData.topic_id) !== Number(topicId)) {
-            console.warn(`Entry belongs to topic ${entryData.topic_id}, not ${topicId}`);
-            // Try to get entry through topic-specific endpoint as fallback
+            console.warn(`Entry belongs to topic ${entryData.topic_id}, not ${topicId}`);            // Try to get entry through topic-specific endpoint as fallback
             const topicEntryRes = await api.get(`/topics/${topicId}/entries/${entryId}`);
             entryData = topicEntryRes.data;
           }
@@ -179,9 +174,7 @@ const EntryDetailPage = () => {
         mood,
         weather,
         is_public: isPublic,
-      });
-      
-      // Fetch the updated entry
+      });      // Fetch the updated entry
       const response = await api.get(`/entries/${entryId}`);
       setEntry(response.data);
       setIsEditing(false);
@@ -325,15 +318,16 @@ const EntryDetailPage = () => {
   const renderEditForm = () => (
     <div className="card p-6">
       <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Edit Entry</h2>
-      
-      {/* Hidden file input element */}
+        {/* Hidden file input element */}
       <input 
+        id="edit-file-upload"
         type="file" 
         ref={fileInputRef}
         onChange={handleFileUpload}
         multiple
         accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
         className="hidden"
+        aria-label="Upload files to entry"
       />
       
       <form onSubmit={handleUpdate} className="space-y-6">
@@ -351,7 +345,6 @@ const EntryDetailPage = () => {
         </div>
         
         <div>          <label htmlFor="content" className="form-label">Content</label>
-<<<<<<< HEAD
           
           {/* AI Writing Assistant */}
           <details className="mb-4 bg-white dark:bg-gray-750 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -376,10 +369,7 @@ const EntryDetailPage = () => {
             </div>
           </details>
               
-          <div style={{minHeight: "70vh"}} className="flex flex-col">
-=======
-              <div style={{minHeight: "70vh"}} className="flex flex-col">
->>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
+          <div className="flex flex-col min-h-[70vh]">
             <MarkdownEditor 
               value={content}
               onChange={(value) => setContent(value)}
@@ -585,7 +575,6 @@ const EntryDetailPage = () => {
           </div>
         ) : (
           <p className="text-gray-500 dark:text-gray-400 italic">No content provided.</p>
-<<<<<<< HEAD
         )}      </div>      {/* AI Analysis Component */}
       {entry && (
         <div className="mt-6 mb-6">
@@ -624,11 +613,6 @@ const EntryDetailPage = () => {
           />
         </div>
       </details>
-=======
-        )}
-      </div>
-      
->>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
       <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Entry Details</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6 text-sm">

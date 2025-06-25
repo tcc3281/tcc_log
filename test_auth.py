@@ -2,18 +2,14 @@
 import requests
 import json
 
-# Test API call với authentication
 def test_with_token():
-    # Simulate getting a valid token first
-    login_data = {
-        "username": "testuser",  # Replace with actual username
-        "password": "testpass"   # Replace with actual password
-    }
-      # First, try to login to get a token
-    try:        print("=== Testing Login ===")
+    """Test API call với authentication"""
+    # First, try to login to get a token
+    try:        
+        print("=== Testing Login ===")
         login_response = requests.post(
             "http://localhost:8000/auth/token", 
-            data={"username": "testuser", "password": "Mayyeutao0?"},  # Use new test user
+            data={"username": "testuser", "password": "Mayyeutao0?"},
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=10
         )
@@ -28,13 +24,11 @@ def test_with_token():
             if access_token:
                 print(f"Got token: {access_token[:20]}...")
                 
-                # Now test the entries endpoint with the token
-                print("\n=== Testing Entries Creation with Token ===")
-                entry_data = {
-                    "topic_id": 1,
-                    "title": "Test Entry with Auth",
-                    "content": "Test content",
-                    "entry_date": "2025-06-25"
+                # Create a topic first
+                print("\n=== Creating Topic for Entry Test ===")
+                topic_data = {
+                    "topic_name": "Test Topic",
+                    "description": "Topic for testing entries"
                 }
                 
                 headers = {
@@ -42,15 +36,40 @@ def test_with_token():
                     "Content-Type": "application/json"
                 }
                 
-                entry_response = requests.post(
-                    "http://localhost:8000/entries/",
-                    json=entry_data,
+                topic_response = requests.post(
+                    "http://localhost:8000/topics/",
+                    json=topic_data,
                     headers=headers,
                     timeout=10
                 )
                 
-                print(f"Entry Creation Status: {entry_response.status_code}")
-                print(f"Entry Creation Response: {entry_response.text}")
+                print(f"Topic Creation Status: {topic_response.status_code}")
+                print(f"Topic Creation Response: {topic_response.text}")
+                
+                if topic_response.status_code == 200:
+                    topic_id = topic_response.json().get("topic_id")
+                    
+                    # Now test the entries endpoint with the token
+                    print("\n=== Testing Entries Creation with Token ===")
+                    entry_data = {
+                        "topic_id": topic_id,
+                        "title": "Test Entry with Auth",
+                        "content": "Test content",
+                        "entry_date": "2025-06-25",
+                        "is_public": False
+                    }
+                    
+                    entry_response = requests.post(
+                        "http://localhost:8000/entries/",
+                        json=entry_data,
+                        headers=headers,
+                        timeout=10
+                    )
+                    
+                    print(f"Entry Creation Status: {entry_response.status_code}")
+                    print(f"Entry Creation Response: {entry_response.text}")
+                else:
+                    print("Failed to create topic, cannot test entries")
             else:
                 print("No access token in response")
         

@@ -351,15 +351,16 @@ const NewEntryPage = () => {
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="card bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border border-gray-200 dark:border-gray-700">
-          
-          {/* Hidden file input element */}
+            {/* Hidden file input element */}
           <input 
+            id="new-entry-file-upload"
             type="file" 
             ref={fileInputRef}
             onChange={handleFileUpload}
             multiple
             accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
             className="hidden"
+            aria-label="Upload files to new entry"
           />
           
 =======

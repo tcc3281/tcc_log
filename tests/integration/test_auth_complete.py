@@ -44,12 +44,12 @@ def test_with_token():
                 )
                 
                 print(f"Topic Creation Status: {topic_response.status_code}")
-                print(f"Topic Creation Response: {topic_response.text}")
-                
+                print(f"Topic Creation Response: {topic_response.text}")                
                 if topic_response.status_code == 200:
                     topic_id = topic_response.json().get("topic_id")
                     
-                    # Now test the entries endpoint with the token                    print("\n=== Testing Entries Creation with Token ===")
+                    # Now test the entries endpoint with the token
+                    print("\n=== Testing Entries Creation with Token ===")
                     entry_data = {
                         "topic_id": topic_id,
                         "title": "Test Entry with Auth",
