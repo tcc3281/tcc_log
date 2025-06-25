@@ -304,12 +304,13 @@ const AIPage: React.FC = () => {
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">AI Chat</h1>
         
         {/* Model selection */}
-        <div className="flex items-center space-x-4">
-          {/* Mode selection */}
+        <div className="flex items-center space-x-4">          {/* Mode selection */}
           <div className="relative">
             <select
               value={useAgent ? "agent" : "ask"}
               onChange={(e) => setUseAgent(e.target.value === "agent")}
+              aria-label="Select AI mode"
+              title="Choose between Ask mode for simple questions or Agent mode for complex queries"
               className="block appearance-none bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md py-2 px-3 pr-8 text-gray-900 dark:text-gray-100 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="ask">Ask</option>
@@ -320,11 +321,12 @@ const AIPage: React.FC = () => {
             </div>
           </div>
           
-          {models.length > 0 && (
-            <div className="relative">
+          {models.length > 0 && (            <div className="relative">
               <select
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
+                aria-label="Select AI model"
+                title="Choose which AI model to use for responses"
                 className="block appearance-none bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md py-2 px-3 pr-8 text-gray-900 dark:text-gray-100 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 {models.map((model, index) => (
@@ -364,11 +366,10 @@ const AIPage: React.FC = () => {
           {/* "AI is typing" indicator - only show when not streaming but still typing */}
           {isTyping && !isStreaming && (
             <div className="flex justify-start">
-              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 py-2 px-4 rounded-lg text-gray-700 dark:text-gray-300">
-                <div className="flex items-center space-x-1">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 py-2 px-4 rounded-lg text-gray-700 dark:text-gray-300">                <div className="flex items-center space-x-1">
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0ms]"></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:150ms]"></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:300ms]"></div>
                 </div>
               </div>
             </div>
@@ -408,10 +409,11 @@ const AIPage: React.FC = () => {
             <StopIcon className="h-5 w-5" />
           </button>
         )}
-        
-        <button
+          <button
           onClick={handleSendMessage}
           disabled={!input.trim() || isTyping}
+          aria-label="Send message"
+          title="Send your message to the AI"
           className={`p-3 mx-2 my-2 rounded-full focus:outline-none ${
             !input.trim() || isTyping
               ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
