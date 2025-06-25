@@ -9,14 +9,18 @@ config = context.config
 # Interpret the config file for Python logging.
 fileConfig(config.config_file_name)
 
-# Debug the DATABASE_URL
-print("DATABASE_URL:", os.getenv('DATABASE_URL'))  # Add this line to debug
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv()
 
-# Comment out the environment variable override to use alembic.ini URL
-# Set the database URL from the environment variable only if it exists and is valid
-# database_url = os.getenv('DATABASE_URL')
-# if database_url and not ('?' in database_url and '%3F' not in database_url):
-#     config.set_main_option('sqlalchemy.url', database_url)
+# Debug the DATABASE_URL
+database_url = os.getenv('DATABASE_URL')
+print("DATABASE_URL:", database_url)
+
+# Use environment variable if it's properly encoded, otherwise use alembic.ini
+if database_url and '%3F' in database_url:  # Properly URL encoded
+    config.set_main_option('sqlalchemy.url', database_url)
+# else: use the URL from alembic.ini
 
 # Add your models' MetaData object here for 'autogenerate' support
 from app.models import Base

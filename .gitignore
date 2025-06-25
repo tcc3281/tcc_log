@@ -21,6 +21,15 @@ wheels/
 *.egg
 MANIFEST
 
+# Cache and temporary files
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
 # Environment variables
 .env
 .env.*
