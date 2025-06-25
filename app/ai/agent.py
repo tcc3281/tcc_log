@@ -7,13 +7,14 @@ from app.ai.lm_studio import (
     DEFAULT_AI_MODEL,
     DEFAULT_TEMPERATURE,
     DEFAULT_MAX_TOKENS,
-    SYSTEM_PROMPTS,
     AI_MODEL,
     query_lm_studio_stream,
     create_ai_request,
     AIRequest,
     AIMessage
 )
+# Import prompt manager
+from app.ai.prompt_manager import get_prompt_manager, get_system_prompt, get_sql_prompt
 
 # Thiết lập logger
 logger = logging.getLogger(__name__)
@@ -49,9 +50,8 @@ class LangChainAgent:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.tools = tools or []
-        
-        # Escape curly braces in system_prompt
-        self.system_prompt = system_prompt or SYSTEM_PROMPTS["default_chat"]
+          # Escape curly braces in system_prompt
+        self.system_prompt = system_prompt or get_system_prompt("default_chat")
         self.system_prompt = self.system_prompt.replace("{", "{{").replace("}", "}}")
         
         # Log system_prompt to debug
@@ -207,197 +207,10 @@ class LangChainAgent:
             schema_text += "\n"
         
         return schema_text.strip()
-
+    
     def _get_sql_prompt(self, schema_text: str) -> str:
-        """Create specialized prompt for database interaction with structured output format"""
-        # Check if schema is empty and handle that case
-        if not schema_text or schema_text.strip() == "":
-            safe_schema_text = "No tables found in the database."
-            logger.debug("Empty schema detected, using default text.")
-        else:
-            # Escape any curly braces in schema_text
-            safe_schema_text = schema_text.replace("{", "{{").replace("}", "}}")
-        
-        # Log the schema text for debugging
-        logger.debug(f"Schema text length: {len(schema_text) if schema_text else 0}")
-        logger.debug(f"Schema text (first 100 chars): {schema_text[:100] if schema_text else 'Empty'}")
-        logger.debug(f"Escaped schema text (first 100 chars): {safe_schema_text[:100] if safe_schema_text else 'Empty'}")
-        
-        # Enhanced system prompt for SQL generation with backend execution
-        database_prompt = """
-
-## Database Access
-You have access to a PostgreSQL database with the following schema:
-
-```
-{schema_text}
-```
-
-### CRITICAL RULES:
-
-1. **NEVER CREATE FAKE DATA** - You do NOT execute queries yourself
-2. **GENERATE SQL ONLY** - Provide SQL queries that backend will execute automatically
-3. **STRUCTURED OUTPUT** - Use the exact format below for SQL generation
-4. **NO FAKE RESULTS** - Never show made-up counts, data, or results
-
-### WORKFLOW:
-- You provide SQL queries in the specified format
-- Backend automatically detects and executes your SQL
-- Real results are added to the conversation automatically
-- You explain what the query does, but don't invent results
-
-### SQL GENERATION FORMAT:
-
-For database questions, follow this exact structure:
-
-**Step 1: Query Analysis**
-
-### QUERY_INTENT: [brief description of what user wants]
-SQL_NEEDED: [yes/no]
-
-
-**Step 2: SQL Generation** (if SQL_NEEDED = yes)
-```
-[YOUR SQL QUERY HERE]
-```
-
-**Step 3: Expected Result Description**
-
-EXPECTED_RESULT: [Describe what kind of data this query should return].
-
-EXPLANATION: [Explain the SQL logic and approach].
-
-
-### EXAMPLES:
-
-**Example 1 - Count Query:**
-
-### QUERY_INTENT: Count total number of users
-SQL_NEEDED: yes.
-
-```
-SELECT COUNT(*) as total_users FROM users;
-```
-
-EXPECTED_RESULT: Single number showing total count of users.
-
-EXPLANATION: Simple COUNT query to get total number of user records.
-
-**Example 2 - Data Retrieval:**
-
-### QUERY_INTENT: Show recent user registrations
-SQL_NEEDED: yes
-
-```
-SELECT user_id, username, email, created_at\nFROM users\nORDER BY created_at DESC\nLIMIT 10;
-```
-
-
-EXPECTED_RESULT: Table showing 10 most recent users with their details.
-
-EXPLANATION: SELECT query with ORDER BY to get newest users first, limited to 10 rows.
-
-
-**Example 3 - Schema Information:**
-
-### QUERY_INTENT: Show available tables
-SQL_NEEDED: yes.
-
-```
-SELECT table_name, table_type\nFROM information_schema.tables\nWHERE table_schema = 'public'\nORDER BY table_name;
-```
-
-
-EXPECTED_RESULT: List of all public tables in the database.
-
-EXPLANATION: Query information_schema to get table metadata.
-
-
-### PROHIBITED BEHAVIORS:
-
-❌ **NEVER do this:**
-```
-The database contains these users:
-- John (john@email.com) 
-- Jane (jane@email.com)
-```
-*This is FAKE DATA - you don't know actual data!*
-
-❌ **NEVER do this:**
-```
-There are 10 users in the system.
-Query executed successfully. Found 10 users.
-```
-*This is PRETENDING to execute queries!*
-
-❌ **NEVER do this:**
-```
-SELECT COUNT(*) FROM users;
-Result: 5 users found
-```
-*Don't show fake execution results!*
-
-### CORRECT BEHAVIOR:
-
-✅ **DO this:**
-### QUERY_INTENT: Count total number of users
-SQL_NEEDED: yes.
-
-
-```
-SELECT COUNT(*) as total_users FROM users;
-```
-
-EXPECTED_RESULT: Single number showing total count of users.
-
-EXPLANATION: Simple COUNT query to get total number of user records.
-
-
-*Then wait for backend to execute and add real results*
-
-### SQL BEST PRACTICES:
-
-1. **Query Structure:**
-   - Use explicit column names instead of SELECT *
-   - Add ORDER BY for consistent sorting  
-   - Include LIMIT for large result sets (default: 10-20 rows)
-   - Use proper PostgreSQL syntax
-
-2. **Comments:**
-   - Always add meaningful comments to SQL
-   - Explain complex JOINs or WHERE conditions
-   - Describe the business purpose
-
-3. **Formatting:**
-   - Use proper indentation and line breaks
-   - UPPERCASE for SQL keywords (SELECT, FROM, WHERE, etc.)
-   - Consistent naming conventions
-
-4. **Safety:**
-   - Be careful with UPDATE/DELETE queries
-   - Consider adding WHERE clauses for data safety
-   - Use appropriate data types in comparisons
-
-### PARSING GUIDELINES:
-
-1. **Always use the exact format structure**
-2. **Consistent keywords: QUERY_INTENT, SQL_NEEDED, EXPECTED_RESULT, EXPLANATION**
-3. **Place SQL in ```sql code blocks for easy extraction**
-4. **No execution attempts - only generation**
-5. **Clear separation between analysis and SQL**
-
-### REMEMBER:
-- Your job is to GENERATE SQL, not execute it
-- Backend will automatically detect and run your SQL
-- Never show fake results or pretend to execute
-- Focus on correct SQL syntax and logic
-- Explain your approach clearly
-"""
-        
-        # Format the template with the schema
-        formatted_prompt = database_prompt.format(schema_text=safe_schema_text)
-        
-        return formatted_prompt
+        """Create specialized prompt for database interaction using prompt manager"""
+        return get_sql_prompt(schema_text)
 
     def _create_dummy_schema(self) -> str:
         """Create a dummy schema when no tables are available in the database"""
