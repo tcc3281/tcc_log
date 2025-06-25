@@ -22,6 +22,9 @@ from langchain_core.tools import Tool
 from langchain.memory import ConversationBufferMemory
 from langchain_core.prompts import MessagesPlaceholder
 
+# Import prompt manager
+from .prompt_manager import get_prompt_manager, get_system_prompt
+
 # ANSI color codes for terminal output
 COLORS = {
     "RED": "\033[91m",
@@ -88,149 +91,18 @@ class ParsedAIResponse(BaseModel):
     answer: str
     raw_content: str
 
-# Common system prompts
-SYSTEM_PROMPTS = {
-    "default_chat": """You are a helpful AI assistant. 
-You can structure your responses using <think>...</think> tags to show your reasoning process.
-Think step by step and provide a detailed response.
-Just list pipeline steps and don't be too detailed.
-For example:    
-<think>
-The user is asking about... Let me consider this carefully...
-</think>
-
-Then provide your main response after the think section.
-
-You have to use Latex to show mathematical expressions. When using LaTeX for mathematical expressions, follow these guidelines:
-1. For inline math (within a sentence), use \\(...\\) delimiters:
-   Example: "The formula \\(E = mc^2\\) is famous."
-
-2. For display math (on its own line), use \\[...\\] delimiters:
-   Example: "The quadratic formula is:
-   \\[
-   x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}
-   \\]"
-
-3. For matrices and other environments, use \\[...\\] with the appropriate environment:
-   Example: "The matrix A is:
-   \\[
-   \\begin{bmatrix}
-   a_{11} & a_{12} \\\\
-   a_{21} & a_{22}
-   \\end{bmatrix}
-   \\]"
-
-If there are compared requirement, create table with markdown to compare between objects.
-Bold the key word in the answer.
-Provide clear, concise, and accurate responses to the user's questions like:
-1. Overview of the topic
-2. Key points or steps
-...
-Be friendly and conversational in your replies.
-You should use Markdown formatting in your responses, including headers, bulleted lists, tables using the GFM (GitHub Flavored Markdown) syntax.
-Finally, provide a conclusion or summary of your response.""",
-
-    "journal_analysis": {
-        "general": """Analyze this journal entry briefly. Focus on key themes and main points.
-                     Keep your response under 200 words.
-                     
-                     First, put your analytical thinking inside <think> tags. Then provide your final answer separately.
-                     Example: 
-                     <think>
-                     Here I analyze the key themes...
-                     </think>
-                     
-                     My analysis of your journal entry:
-                     [Your final response]""",
-                      
-        "mood": """Analyze the writer's mood and emotional state in 3-5 sentences.
-                   Focus only on emotions and mood.
-                   
-                   First, put your analytical thinking inside <think> tags. Then provide your final answer separately.
-                   Example: 
-                   <think>
-                   Here I analyze the emotions...
-                   </think>
-                   
-                   Mood analysis:
-                   [Your final response]""",
-                   
-        "summary": """Summarize the main points in 3-4 sentences.
-                     Focus on key events and emotions only.
-                     
-                     First, put your analytical thinking inside <think> tags. Then provide your final answer separately.
-                     Example: 
-                     <think>
-                     Here I identify the key points...
-                     </think>
-                     
-                     Summary:
-                     [Your final response]""",
-                      
-        "insights": """Provide 2-3 key insights about the writer's thoughts or patterns.
-                      Keep it brief and focused.
-                      
-                      First, put your analytical thinking inside <think> tags. Then provide your final answer separately.
-                      Example: 
-                      <think>
-                      Here I analyze patterns...
-                      </think>
-                      
-                      Key insights:
-                      [Your final response]"""
-    },
-
-    "writing_improvement": {
-        "grammar": """You are an expert English grammar editor. Your task is to correct grammar mistakes, fix punctuation, and ensure proper sentence structure while preserving the original meaning and tone. Only make necessary corrections without changing the writing style.""",
-        
-        "style": """You are a professional writing coach. Improve the writing style to make it more engaging, clear, and natural. Enhance sentence flow, vary sentence length, and improve transitions while maintaining the author's voice and message.""",
-        
-        "vocabulary": """You are an English vocabulary specialist. Replace basic or repetitive words with more sophisticated, precise vocabulary. Improve word choice to make the writing more expressive and eloquent while keeping it natural and accessible.""",
-        
-        "complete": """You are a comprehensive writing editor. Improve this English text by:
-1. Correcting grammar, spelling, and punctuation errors
-2. Enhancing vocabulary with more precise and varied word choices
-3. Improving sentence structure and flow
-4. Making the writing more engaging and polished
-5. Ensuring clarity and coherence
-
-Maintain the original meaning, tone, and personal voice while making it significantly better."""
-    },
-
-    "writing_suggestions": """You are an expert English writing tutor. Analyze the provided text and give specific, actionable feedback in these categories:
-
-1. Grammar & Mechanics: Point out specific grammar errors, punctuation issues, or spelling mistakes
-2. Vocabulary & Word Choice: Suggest better word choices or identify repetitive/weak words
-3. Style & Flow: Comment on sentence structure, transitions, and overall readability
-4. Content & Clarity: Identify unclear parts or suggest ways to express ideas more effectively
-
-Format your response as:
-**Grammar & Mechanics:**
-[Your feedback here]
-
-**Vocabulary & Word Choice:**
-[Your feedback here]
-
-**Style & Flow:**
-[Your feedback here]
-
-**Content & Clarity:**
-[Your feedback here]
-
-Be specific and constructive in your feedback.""",
-
-    "journaling_prompts": """You are a creative assistant specialized in journaling. 
-                           Create engaging, thoughtful and inspiring journaling prompts.
-                           Respond with a list of prompts, each prompt on a new line, starting with a bullet point (-)."""
-}
-
-# Token limits for different analysis types
+# Token limits for different analysis types (moved from SYSTEM_PROMPTS)
 ANALYSIS_MAX_TOKENS = {
     "general": 800,
     "mood": 800,
     "summary": 600,
     "insights": 700
 }
+
+# Helper function to get system prompts
+def get_system_prompts():
+    """Get system prompts from prompt manager"""
+    return get_prompt_manager().prompts.get("system_prompts", {})
 
 def get_chatopen_ai_instance(model: str = None, temperature: float = None, max_tokens: int = None) -> ChatOpenAI:
     """Get a reusable ChatOpenAI instance"""
@@ -504,7 +376,7 @@ async def analyze_journal_entry(
     model: Optional[str] = None
 ) -> Dict[str, Any]:
     """Analyze a journal entry using the AI model."""
-    system_prompt = SYSTEM_PROMPTS["journal_analysis"].get(analysis_type, SYSTEM_PROMPTS["journal_analysis"]["general"])
+    system_prompt = get_prompt_manager().get_analysis_prompt(analysis_type)
     max_tokens = ANALYSIS_MAX_TOKENS.get(analysis_type, 800)
     
     content = f"Journal title: {entry_title}\n\nJournal content:\n{entry_content}"
@@ -527,7 +399,7 @@ async def improve_writing(
     model: Optional[str] = None
 ) -> Dict[str, Any]:
     """Improve the writing quality of English text."""
-    system_prompt = SYSTEM_PROMPTS["writing_improvement"].get(improvement_type, SYSTEM_PROMPTS["writing_improvement"]["complete"])
+    system_prompt = get_prompt_manager().get_writing_improvement_prompt(improvement_type)
     
     content = f"Please improve this text:\n\n{text}"
     
@@ -555,7 +427,7 @@ async def suggest_writing_improvements(
     
     result = await process_ai_request(
         content=content,
-        system_prompt=SYSTEM_PROMPTS["writing_suggestions"],
+        system_prompt=get_system_prompt("writing_suggestions"),
         model=model,
         temperature=0.4,
         max_tokens=1000,
@@ -582,7 +454,7 @@ async def generate_journaling_prompts(
     try:
         result = await process_ai_request(
             content=base_content,
-            system_prompt=SYSTEM_PROMPTS["journaling_prompts"],
+            system_prompt=get_system_prompt("journaling_prompts"),
             model=model,
             temperature=0.8,  # Higher temperature for creativity
             max_tokens=500,
@@ -963,7 +835,7 @@ async def chat_with_ai(
         # Non-agent mode (fallback or original setting)
         non_agent_status = f"{COLORS['YELLOW']}{COLORS['BOLD']}[NON-AGENT MODE]{COLORS['RESET']}"
         print(f"\n{non_agent_status} Using standard chat mode with model: {model or AI_MODEL}")
-        base_system_prompt = system_prompt or SYSTEM_PROMPTS["default_chat"]
+        base_system_prompt = system_prompt or get_system_prompt("default_chat")
         
         # Thêm thông tin database schema vào prompt nếu cần
         if db_schema_prompt and is_db_related:
