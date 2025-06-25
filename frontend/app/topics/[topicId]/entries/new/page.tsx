@@ -166,10 +166,9 @@ const NewEntryPage = () => {
       let response;
       if (currentEntryId) {
         // Update existing draft entry
-        response = await api.put(`/entries/${currentEntryId}`, entryData);
-      } else {
+        response = await api.put(`/entries/${currentEntryId}`, entryData);      } else {
         // Create new entry
-        response = await api.post(`/entries`, entryData);
+        response = await api.post(`/entries/`, entryData);
       }
       
       // Redirect to the new entry
@@ -197,7 +196,7 @@ const NewEntryPage = () => {
         is_public: false // Always start as private for drafts
       };
 
-      const response = await api.post(`/entries`, draftData);
+      const response = await api.post(`/entries/`, draftData);
       setCurrentEntryId(response.data.entry_id);
       return response.data.entry_id;
     } catch (err) {
