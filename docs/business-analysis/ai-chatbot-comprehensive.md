@@ -147,11 +147,11 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    Start(["User sends message"]) --> Auth{Authentication?}
+    Start(["User sends message"]) --> Auth["Authentication?"]
     Auth -->|Invalid| AuthError["Return 401 Error"]
     Auth -->|Valid| ValidateInput["Validate Input"]
     
-    ValidateInput --> SelectMode{Select AI Mode}
+    ValidateInput --> SelectMode["Select AI Mode"]
     
     SelectMode -->|Simple Chat| SimpleFlow["Simple Chat Flow"]
     SelectMode -->|Agent Mode| AgentFlow["Agent Flow"]
@@ -642,20 +642,20 @@ NEXT_SERVER_API_URL=http://backend:8000
 
 ```mermaid
 flowchart TD
-    Request["User Request"] --> LMStudio{LM Studio Available?}
+    Request["User Request"] --> LMStudio["LM Studio Available?"]
     
     LMStudio -->|Yes| ProcessLM["Process with LM Studio"]
     LMStudio -->|No| TryOpenAI["Try OpenAI API"]
     
-    ProcessLM --> LMError{LM Studio Error?}
+    ProcessLM --> LMError["LM Studio Error?"]
     LMError -->|No| Success["Successful Response"]
     LMError -->|Yes| TryOpenAI
     
-    TryOpenAI --> OpenAICheck{OpenAI Available?}
+    TryOpenAI --> OpenAICheck["OpenAI Available?"]
     OpenAICheck -->|Yes| ProcessOpenAI["Process with OpenAI"]
     OpenAICheck -->|No| ErrorResponse["Return Error Response"]
     
-    ProcessOpenAI --> OpenAIError{OpenAI Error?}
+    ProcessOpenAI --> OpenAIError["OpenAI Error?"]
     OpenAIError -->|No| Success
     OpenAIError -->|Yes| ErrorResponse
     

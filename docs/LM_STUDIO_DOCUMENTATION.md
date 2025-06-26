@@ -2,201 +2,608 @@
 
 ## 🎯 Tổng quan
 
-File `lm_studio.py` là trung tâm xử lý AI của ứng dụng, được thiết kế để quản lý tất cả các tương tác với AI models thông qua LM Studio và OpenAI API. File này đã được refactor hoàn toàn để sử dụng **streaming responses** cho tất cả các cuộc trò chuyện và tích hợp **OpenAI tool-calling**.
+File `lm_studio.py` là trung tâm xử lý AI của ứng dụng, được thiết kế để quản lý tất cả các tương tác với AI models thông qua LM Studio và OpenAI API. File này đã được refactor hoàn toàn để sử dụng **streaming responses** cho tất cả các cuộc trò chuyện và tích hợp **intelligent SQL processing** với auto-execution capabilities.
 
 ## 🏗️ Kiến trúc tổng thể
 
-```
-User Request → chat_with_ai() → [Agent Mode / Non-Agent Mode] 
-           ↓
-    query_lm_studio_stream() → OpenAI Direct API → Stream Response
-           ↓
-    SQL Post-processing (if needed) → Formatted Results → Frontend
-```
-
-## 📋 Cấu trúc File
-
-### 1. **Configuration & Imports (Dòng 1-55)**
-
-```python
-# Core imports
-import os, logging, httpx, re, asyncio
-from typing import Optional, List, Dict, Any, Union
-from pydantic import BaseModel
-from dotenv import load_dotenv
-
-# LangChain imports
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage as LCMessage
-from langchain_core.tools import Tool
-
-# Local imports
-from .prompt_manager import get_prompt_manager, get_system_prompt
-```
-
-**Mục đích**: 
-- Thiết lập môi trường và dependencies
-- Import các thư viện cần thiết cho AI processing
-- Cấu hình logging và environment variables
-
-**Configuration Variables**:
-```python
-DEFAULT_LM_STUDIO_BASE_URL = "http://127.0.0.1:1234/v1"
-DEFAULT_AI_MODEL = "qwen/qwen3-1.7b"
-DEFAULT_MAX_TOKENS = 2000
-DEFAULT_TEMPERATURE = 0.7
-DEFAULT_MAX_INFERENCE_TIME = 60000  # 60 seconds
-```
-
-### 2. **Data Models (Dòng 57-88)**
-
-#### `AIMessage(BaseModel)`
-```python
-class AIMessage(BaseModel):
-    role: str  # "system", "user", or "assistant"
-    content: str
-```
-**Chức năng**: Cấu trúc cơ bản cho tin nhắn AI
-
-#### `AIRequest(BaseModel)`
-```python
-class AIRequest(BaseModel):
-    messages: List[AIMessage]
-    model: Optional[str] = None
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
-    tools: Optional[List[Dict[str, Any]]] = None
-```
-**Chức năng**: Cấu trúc request gửi đến AI model
-
-#### `AIResponse(BaseModel)`
-```python
-class AIResponse(BaseModel):
-    content: str
-    model: str
-    usage: Optional[Dict[str, Optional[int]]] = None
-    tokens_per_second: Optional[float] = None
-    time_to_first_token: Optional[float] = None
-    tool_calls: Optional[List[Dict[str, Any]]] = None
-```
-**Chức năng**: Cấu trúc response từ AI model
-
-#### `ParsedAIResponse(BaseModel)`
-```python
-class ParsedAIResponse(BaseModel):
-    think: Optional[str] = None
-    answer: str
-    raw_content: str
-```
-**Chức năng**: Response đã được parse để tách phần `<think>` và `answer`
-
-### 3. **Core Management Functions**
-
-#### `get_chatopen_ai_instance()` - Singleton Pattern
-```python
-def get_chatopen_ai_instance(model: str = None, temperature: float = None, max_tokens: int = None) -> ChatOpenAI:
-    """Get a reusable ChatOpenAI instance"""
-    global _chatopen_ai_instance
+```mermaid
+graph TB
+    subgraph "User Interface Layer"
+        A["User Chat Input"]
+        B["Analysis Request"]
+        C["Writing Improvement"]
+        D["Prompt Generation"]
+    end
     
-    # Use defaults if not provided
-    model = model or AI_MODEL
-    temperature = temperature if temperature is not None else DEFAULT_TEMPERATURE
-    max_tokens = max_tokens or DEFAULT_MAX_TOKENS
-    timeout = MAX_INFERENCE_TIME / 1000
+    subgraph "Main Chat Orchestrator"
+        E["chat_with_ai() - CENTRAL HUB"]
+        E --> F["Agent Mode?"]
+        E --> G["Database Context?"]
+        E --> H["Streaming Mode?"]
+    end
     
-    # Create new instance if none exists or parameters changed
-    if (_chatopen_ai_instance is None or 
-        _chatopen_ai_instance.model_name != model or 
-        _chatopen_ai_instance.temperature != temperature or
-        _chatopen_ai_instance.max_tokens != max_tokens):
+    subgraph "AI Processing Modes"
+        F -->|Yes| I["LangChain Agent Mode"]
+        F -->|No| J["Direct LLM Mode"]
         
-        _chatopen_ai_instance = ChatOpenAI(
-            base_url=LM_STUDIO_BASE_URL,
-            api_key="not-needed",
-            model_name=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            timeout=timeout
-        )
+        I --> K["Agent with Tools"]
+        I --> L["SQL Auto-execution"]
+        
+        J --> M["Enhanced System Prompt"]
+        J --> N["Schema Injection"]
+    end
     
-    return _chatopen_ai_instance
+    subgraph "Core Streaming Engine"
+        O["query_lm_studio_stream()"]
+        O --> P["Direct OpenAI API"]
+        P --> Q["Real-time Token Streaming"]
+        Q --> R["Performance Stats"]
+    end
+    
+    subgraph "LM Studio Integration"
+        S["LM Studio Local Server"]
+        S --> T["Model Management"]
+        S --> U["Health Monitoring"]
+        S --> V["Auto Model Selection"]
+    end
+    
+    subgraph "SQL Intelligence System"
+        W["SQL Post-processing"]
+        W --> X["Pattern Recognition"]
+        X --> Y["Query Extraction"]
+        Y --> Z["Auto Execution"]
+        Z --> AA["Result Formatting"]
+    end
+    
+    A --> E
+    B --> E
+    C --> E
+    D --> E
+    
+    K --> O
+    M --> O
+    O --> S
+    
+    L --> W
+    
+    style E fill:#1C3C3C,color:#ffffff
+    style S fill:#ff6b35
+    style O fill:#005571
+    style W fill:#316192
 ```
 
-**Tính năng chính**:
-- **Singleton Pattern**: Tái sử dụng instance để tối ưu performance
-- **Parameter Validation**: Kiểm tra thay đổi parameters để tạo instance mới
-- **Timeout Management**: Quản lý timeout dựa trên configuration
-- **Connection Management**: Kết nối đến LM Studio local server
+### 🔄 Request Processing Flow
 
-#### `parse_ai_response()` - Response Parser
-```python
-def parse_ai_response(content: str) -> ParsedAIResponse:
-    """Parse AI response to separate think and answer sections"""
+```mermaid
+sequenceDiagram
+    participant User
+    participant ChatAI as "chat_with_ai()"
+    participant Agent as "LangChain Agent"
+    participant LM as "LM Studio"
+    participant SQL as "SQL Processor"
+    participant DB as "Database"
     
-    # Pattern to match <think>...</think> sections
-    think_pattern = r'<think>\s*(.*?)\s*</think>'
+    User->>ChatAI: "Send Message"
+    ChatAI->>ChatAI: "Detect Context (DB/General)"
     
-    # Find think section
-    think_match = re.search(think_pattern, content, re.DOTALL | re.IGNORECASE)
+    alt Agent Mode
+        ChatAI->>Agent: "Initialize with Tools"
+        Agent->>LM: "Stream with Tool Access"
+        LM-->>Agent: "Response with SQL"
+        Agent-->>ChatAI: "Complete Response"
+        ChatAI->>SQL: "Post-process SQL"
+        SQL->>DB: "Execute Queries"
+        DB-->>SQL: "Results"
+        SQL-->>User: "Enhanced Response"
+    else Direct Mode
+        ChatAI->>ChatAI: "Enhance System Prompt"
+        ChatAI->>LM: "Direct Streaming Call"
+        LM-->>ChatAI: "Token Stream"
+        ChatAI-->>User: "Real-time Response"
+    end
     
-    if think_match:
-        think_content = think_match.group(1).strip()
-        # Remove the think section from the content to get the answer
-        answer_content = re.sub(think_pattern, '', content, flags=re.DOTALL | re.IGNORECASE).strip()
-    else:
-        think_content = None
-        answer_content = content.strip()
-    
-    return ParsedAIResponse(
-        think=think_content,
-        answer=answer_content,
-        raw_content=content
-    )
+    Note over ChatAI,User: "Streaming throughout entire process"
 ```
 
-**Tính năng chính**:
-- **Think Section Extraction**: Tách phần suy nghĩ nội bộ của AI
-- **Clean Answer**: Loại bỏ think tags khỏi response cuối cùng
-- **Regex Processing**: Sử dụng regex để parse content chính xác
+## 📊 Data Models & Architecture
 
-### 4. **Model Management**
+### 🏗️ Core Data Models
 
-#### `get_available_models()` - Model Discovery
-```python
-async def get_available_models() -> List[str]:
-    """Get list of available models from LM Studio with caching"""
-    global _available_models_cache, _cache_timestamp
-    import time
+```mermaid
+classDiagram
+    class AIMessage {
+        +str role
+        +str content
+        +validate_role()
+    }
     
-    # Cache for 5 minutes
-    current_time = time.time()
-    if _available_models_cache is not None and (current_time - _cache_timestamp) < 300:
-        return _available_models_cache
+    class AIRequest {
+        +List[AIMessage] messages
+        +Optional[str] model
+        +Optional[float] temperature
+        +Optional[int] max_tokens
+        +Optional[List[Dict]] tools
+        +validate_messages()
+        +set_defaults()
+    }
     
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"{LM_STUDIO_BASE_URL}/models")
-            response.raise_for_status()
-            
-            models_data = response.json()
-            model_ids = [model["id"] for model in models_data.get("data", [])]
-            
-            # Update cache
-            _available_models_cache = model_ids
-            _cache_timestamp = current_time
-            
-            return model_ids
-    except Exception as e:
-        logger.error(f"Error fetching available models: {e}")
-        return []
+    class AIResponse {
+        +str content
+        +str model
+        +Optional[Dict] usage
+        +Optional[float] tokens_per_second
+        +Optional[float] time_to_first_token
+        +Optional[List[Dict]] tool_calls
+        +calculate_performance()
+    }
+    
+    class ParsedAIResponse {
+        +Optional[str] think
+        +str answer
+        +str raw_content
+        +separate_thinking()
+    }
+    
+    AIRequest --> "1..*" AIMessage
+    AIResponse --> ParsedAIResponse : "parse_ai_response()"
+    
+    note for AIMessage "Roles: system, user, assistant"
+    note for ParsedAIResponse "Separates <think> sections from final answer"
 ```
 
-**Tính năng chính**:
-- **5-minute Caching**: Tránh gọi API liên tục
-- **Error Handling**: Graceful degradation khi không kết nối được
-- **Async Operation**: Non-blocking model discovery
+### 🔧 Core Management Functions
 
-#### `validate_and_get_model()` - Smart Model Selection
+```mermaid
+graph TD
+    subgraph "Instance Management"
+        A["get_chatopen_ai_instance()"]
+        A --> B["Parameters Changed?"]
+        B -->|Yes| C["Create New Instance"]
+        B -->|No| D["Return Cached Instance"]
+        C --> E["ChatOpenAI Instance"]
+        D --> E
+    end
+    
+    subgraph "Model Management"
+        F["get_available_models()"]
+        F --> G["Cache Check"]
+        G --> H["Cache Valid?"]
+        H -->|Yes| I["Return Cached Models"]
+        H -->|No| J["Query LM Studio API"]
+        J --> K["Update Cache"]
+        K --> L["Return Model List"]
+    end
+    
+    subgraph "Smart Model Selection"
+        M["validate_and_get_model()"]
+        M --> N["Model Valid?"]
+        N -->|No| O["Get Available Models"]
+        O --> P["Filter Non-Embedding"]
+        P --> Q["Select Best Model"]
+        N -->|Yes| R["Return Model"]
+        Q --> R
+    end
+    
+    style A fill:#1C3C3C,color:#ffffff
+    style F fill:#ff6b35
+    style M fill:#005571
+```
+
+### 🌊 Streaming Architecture Deep Dive
+
+```mermaid
+graph TB
+    subgraph "Streaming Entry Point"
+        A["query_lm_studio_stream()"]
+        A --> B["Validate Model"]
+        A --> C["Setup Parameters"]
+        A --> D["Initialize OpenAI Client"]
+    end
+    
+    subgraph "Streaming Process"
+        D --> E["Create Stream Request"]
+        E --> F["Process Chunks Async"]
+        F --> G["Chunk Type?"]
+        
+        G -->|Content| H["Extract Content"]
+        G -->|Stats| I["Calculate Performance"]
+        G -->|Error| J["Handle Error"]
+        
+        H --> K["Yield Content Token"]
+        I --> L["Yield Stats JSON"]
+        J --> M["Yield Error Message"]
+    end
+    
+    subgraph "Performance Tracking"
+        N["Start Time"]
+        O["End Time"]
+        P["Content Length"]
+        Q["Calculate Tokens/Second"]
+        
+        N --> Q
+        O --> Q
+        P --> Q
+        Q --> L
+    end
+    
+    K --> R["Client Receives Real-time"]
+    L --> S["Client Updates Stats"]
+    M --> T["Client Shows Error"]
+    
+    style A fill:#1C3C3C,color:#ffffff
+    style K fill:#005571
+    style L fill:#ff6b35
+```
+
+## 🤖 Central Chat Orchestrator - chat_with_ai()
+
+### 🎯 Main Decision Flow
+
+```mermaid
+graph TD
+    A["chat_with_ai() - ENTRY POINT"] --> B["Database Context Detection"]
+    
+    B -->|"DB Keywords Found"| C["Load SQL Schema"]
+    B -->|"No DB Keywords"| D["Standard Processing"]
+    
+    C --> E["Inject Schema into Prompt"]
+    D --> F["Use Base System Prompt"]
+    E --> F
+    
+    F --> G["use_agent = True?"]
+    
+    G -->|Yes| H["LangChain Agent Mode"]
+    G -->|No| I["Direct LLM Mode"]
+    
+    subgraph "Agent Mode Processing"
+        H --> J["Initialize LangChain Agent"]
+        J --> K["Add SQL Tools"]
+        K --> L["Streaming?"]
+        L -->|Yes| M["Agent Streaming"]
+        L -->|No| N["Agent Non-streaming"]
+        
+        M --> O["Post-process SQL"]
+        N --> O
+    end
+    
+    subgraph "Direct Mode Processing"
+        I --> P["Enhanced System Prompt"]
+        P --> Q["Streaming?"]
+        Q -->|Yes| R["query_lm_studio_stream()"]
+        Q -->|No| S["query_lm_studio()"]
+    end
+    
+    O --> T["SQL Auto-execution"]
+    R --> U["Real-time Response"]
+    S --> V["Complete Response"]
+    T --> W["Enhanced Results"]
+    
+    style A fill:#1C3C3C,color:#ffffff
+    style H fill:#ff6b35
+    style I fill:#005571
+    style T fill:#316192
+```
+
+### 🔍 Database Context Detection
+
+```mermaid
+graph LR
+    A["User Message"] --> B["Keyword Detection"]
+    
+    B --> C["Contains DB Keywords?"]
+    
+    subgraph "DB Keywords"
+        D["database"]
+        E["sql"] 
+        F["query"]
+        G["table"]
+        H["schema"]
+        I["select/insert/update/delete"]
+        J["join/where"]
+        K["postgres/postgresql"]
+    end
+    
+    C -->|Yes| L["Load PostgreSQL Tool"]
+    C -->|No| M["Skip DB Integration"]
+    
+    L --> N["Get Database Schema"]
+    N --> O["Format Schema for AI"]
+    O --> P["Inject into System Prompt"]
+    
+    M --> Q["Standard Chat Processing"]
+    P --> R["Enhanced DB-aware Chat"]
+    
+    style L fill:#316192
+    style R fill:#1C3C3C,color:#ffffff
+```
+
+## 🛠️ Specialized AI Functions
+
+### 📊 Journal Analysis System
+
+```mermaid
+graph TD
+    A["analyze_journal_entry()"] --> B["Select Analysis Type"]
+    
+    B --> C["Analysis Type"]
+    
+    C -->|general| D["General Analysis - 800 tokens"]
+    C -->|mood| E["Mood Analysis - 800 tokens"]
+    C -->|summary| F["Content Summary - 600 tokens"]
+    C -->|insights| G["Learning Insights - 700 tokens"]
+    
+    D --> H["Get Analysis Prompt"]
+    E --> H
+    F --> H
+    G --> H
+    
+    H --> I["Format Entry Content"]
+    I --> J["Create AI Request"]
+    J --> K["process_ai_request()"]
+    K --> L["Parse Response"]
+    L --> M["Return Analysis Result"]
+    
+    subgraph "Analysis Prompts"
+        N["Prompt Manager"]
+        N --> O["general_analysis.prompt"]
+        N --> P["mood_analysis.prompt"]
+        N --> Q["summary_analysis.prompt"]
+        N --> R["insights_analysis.prompt"]
+    end
+    
+    H --> N
+    
+    style K fill:#1C3C3C,color:#ffffff
+    style N fill:#ff6b35
+```
+
+### ✍️ Writing Enhancement System
+
+```mermaid
+graph TD
+    A["improve_writing()"] --> B["Select Improvement Type"]
+    
+    B --> C["Improvement Type"]
+    
+    C -->|grammar| D["Grammar Correction"]
+    C -->|style| E["Style Improvement"]
+    C -->|clarity| F["Clarity Enhancement"]
+    C -->|tone| G["Tone Adjustment"]
+    
+    D --> H["Get Writing Prompt"]
+    E --> H
+    F --> H
+    G --> H
+    
+    H --> I["Low Temperature 0.3"]
+    I --> J["Max 1500 tokens"]
+    J --> K["Create AI Request"]
+    K --> L["process_ai_request()"]
+    L --> M["Return Improved Text"]
+    
+    subgraph "Writing Prompts"
+        N["Prompt Manager"]
+        N --> O["grammar_improvement.prompt"]
+        N --> P["style_improvement.prompt"]
+        N --> Q["clarity_improvement.prompt"]
+        N --> R["tone_adjustment.prompt"]
+    end
+    
+    H --> N
+    
+    style L fill:#1C3C3C,color:#ffffff
+    style I fill:#005571
+```
+## 🔍 SQL Intelligence System - Auto-Execution Engine
+
+### 🎯 SQL Post-Processing Architecture
+
+```mermaid
+graph TB
+    subgraph "SQL Detection & Extraction"
+        A["AI Response Content"] --> B["SQL Pattern Detection"]
+        B --> C["Contains SQL?"]
+        
+        C -->|Yes| D["Multiple Pattern Matching"]
+        C -->|No| E["Return Original Response"]
+        
+        subgraph "SQL Patterns"
+            F["Code Block with SQL"]
+            G["SQL Code Block"]
+            H["Inline SQL Block"]
+        end
+        
+        D --> F
+        D --> G
+        D --> H
+    end
+    
+    subgraph "Query Validation & Cleaning"
+        I["Extract SQL Query"] --> J["Clean Query"]
+        J --> K["Remove Comments"]
+        K --> L["Validate SQL Keywords"]
+        L --> M["Valid SQL?"]
+        
+        M -->|Yes| N["Check for Duplicates"]
+        M -->|No| O["Skip Query"]
+        
+        N --> P["Already Executed?"]
+        P -->|Yes| Q["Skip Duplicate"]
+        P -->|No| R["Proceed to Execution"]
+    end
+    
+    subgraph "Execution & Formatting"
+        R --> S["Execute SQL Query"]
+        S --> T["Execution Success?"]
+        
+        T -->|Yes| U["Format Results"]
+        T -->|No| V["Log Error"]
+        
+        U --> W["Result Type?"]
+        W -->|"Single Value"| X["Format as Value"]
+        W -->|"Multiple Rows"| Y["Format as Table"]
+        
+        X --> Z["Return Enhanced Response"]
+        Y --> Z
+    end
+    
+    F --> I
+    G --> I
+    H --> I
+    
+    style R fill:#316192
+    style S fill:#1C3C3C,color:#ffffff
+    style Z fill:#005571
+```
+
+### 🔄 SQL Execution Flow
+
+```mermaid
+sequenceDiagram
+    participant AI as "AI Response"
+    participant Processor as "SQL Processor"
+    participant Validator as "Query Validator"
+    participant DB as "Database"
+    participant Formatter as "Result Formatter"
+    
+    AI->>Processor: "Response with SQL code blocks"
+    Processor->>Processor: "Extract SQL patterns"
+    
+    loop "For each SQL query found"
+        Processor->>Validator: "Clean and validate query"
+        Validator->>Validator: "Check syntax and keywords"
+        
+        alt "Query is valid"
+            Validator->>DB: "Execute SQL query"
+            DB-->>Validator: "Query results"
+            Validator->>Formatter: "Format results"
+            
+            alt "Single value result"
+                Formatter-->>Processor: "✅ REAL Result: value"
+            else "Multiple rows"
+                Formatter-->>Processor: "✅ REAL Results: table"
+            end
+        else "Query invalid"
+            Validator-->>Processor: "Skip invalid query"
+        end
+    end
+    
+    Processor-->>AI: "Enhanced response with real results"
+```
+
+### 🧹 SQL Query Cleaning Process
+
+```mermaid
+graph TD
+    A[Raw SQL from AI] --> B[Remove Leading/Trailing Whitespace]
+    B --> C[Split into Lines]
+    C --> D[Filter Comments & Empty Lines]
+    
+    D --> E["Line Processing"]
+    E -->|Comment Line| F["Skip Line"]
+    E -->|Empty Line| F
+    E -->|Valid Line| G[Keep Line]
+    
+    F --> H[Continue Next Line]
+    G --> H
+    H --> I["More Lines?"]
+    
+    I -->|Yes| E
+    I -->|No| J[Join Valid Lines]
+    
+    J --> K[Remove Extra Whitespace]
+    K --> L[Add Semicolon if Missing]
+    L --> M[Final Cleaned Query]
+    
+    style M fill:#1C3C3C,color:#ffffff
+```
+
+### 📊 Result Formatting System
+
+```mermaid
+graph TD
+    A[Query Results] --> B["Result Type Check"]
+    
+    B -->|Empty Results| C["Return No data found"]
+    B -->|Single Value| D[Format Single Value]
+    B -->|Multiple Rows| E[Format Table]
+    
+    subgraph "Single Value Formatting"
+        D --> F[Extract Value]
+        F --> G["Return REAL Result with value"]
+    end
+    
+    subgraph "Table Formatting"
+        E --> H[Get Column Names]
+        H --> I[Filter Sensitive Columns]
+        I --> J["Limit Columns (max 6)"]
+        J --> K[Create Markdown Table]
+        
+        K --> L[Add Table Headers]
+        L --> M[Add Separator Row]
+        M --> N["Add Data Rows (max 10)"]
+        N --> O[Format Cell Values]
+        
+        subgraph "Cell Formatting"
+            O --> P["Value Type?"]
+            P -->|null| Q["null value"]
+            P -->|datetime| R["YYYY-MM-DD HH:MM"]
+            P -->|long string| S["value truncated"]
+            P -->|boolean| T["✓/✗"]
+            P -->|other| U["str(value)"]
+        end
+        
+        O --> V[Escape Markdown Characters]
+        V --> W[Return Formatted Table]
+    end
+    
+    style G fill:#005571
+    style W fill:#316192
+```
+
+### 🛡️ Security & Validation
+
+```mermaid
+graph LR
+    A[SQL Query] --> B[Keyword Validation]
+    
+    B --> C["Starts with Valid Keyword?"]
+    
+    subgraph "Valid Keywords"
+        D[SELECT]
+        E[INSERT]
+        F[UPDATE]
+        G[DELETE]
+        H[CREATE]
+        I[DROP]
+        J[ALTER]
+        K[SHOW/DESCRIBE]
+    end
+    
+    C -->|Yes| L[Check Forbidden Content]
+    C -->|No| M[Reject Query]
+    
+    L --> N["Contains Forbidden?"]
+    
+    subgraph "Forbidden Content"
+        O[example/placeholder]
+        P[your_table/your_column]
+        Q[sample_data]
+        R[explanatory text mixed]
+    end
+    
+    N -->|Yes| S[Reject Query]
+    N -->|No| T[Length Validation]
+    
+    T --> U["Query Length > 8?"]
+    U -->|Yes| V[Accept Query]
+    U -->|No| W[Reject Query]
+    
+    style V fill:#1C3C3C,color:#ffffff
+    style M fill:#ff4444
+    style S fill:#ff4444
+    style W fill:#ff4444
+```
 ```python
 async def validate_and_get_model(model: Optional[str] = None) -> str:
     """Validate and get the best available model"""
@@ -980,3 +1387,359 @@ File `lm_studio.py` là một AI backend hoàn chỉnh với:
 - **Specialized functions** cho journal analysis, writing improvement, etc.
 
 Code được thiết kế để scalable, maintainable, và user-friendly với comprehensive logging và error messages.
+
+## 🔍 THỰC TẾ HIỆN TẠI VS DOCUMENTATION
+
+### ✅ **ĐÃ ĐÚNG VỚI CODE THỰC TẾ:**
+- File `lm_studio.py` có 1040 dòng code
+- Function `chat_with_ai()` là central orchestrator
+- Streaming implementation qua `query_lm_studio_stream()`
+- SQL post-processing với auto-execution
+- Agent integration với LangChain
+- All API endpoints trong `/ai` router
+- Think/Answer separation
+- Database context detection
+- Model management với caching
+
+### ⚠️ **CẦN CẬP NHẬT:**
+- Environment variables mặc định
+- Một số parameter names chi tiết  
+- Future features chưa implement
+- Performance metrics chưa đầy đủ
+- Redis caching layer chưa có
+- PGVector integration chưa có
+
+### 📋 **API ENDPOINTS THỰC TẾ:**
+- `GET /ai/status` - Health check ✅
+- `GET /ai/models` - List models ✅  
+- `POST /ai/chat` - Non-streaming chat ✅
+- `POST /ai/chat-stream` - Streaming chat ✅
+- `POST /ai/analyze-entry` - Journal analysis ✅
+- `POST /ai/improve-writing` - Writing improvement ✅
+- `POST /ai/generate-prompts` - Prompt generation ✅
+- `POST /ai/writing-suggestions` - Writing suggestions ✅
+
+## 🎯 API Endpoints & Integration
+
+### 🌐 Complete API Reference (ACTUAL IMPLEMENTATION)
+
+```mermaid
+graph TB
+    subgraph "AI Service Endpoints - THỰC TẾ"
+        A["/ai/status"] --> A1["Service Health Check"]
+        B["/ai/models"] --> B1["Available Models List"]
+        C["/ai/chat"] --> C1["Non-streaming Chat"]
+        D["/ai/chat-stream"] --> D1["Streaming Chat với SSE"]
+        E["/ai/analyze-entry"] --> E1["Journal Analysis"]
+        F["/ai/improve-writing"] --> F1["Writing Enhancement"]
+        G["/ai/generate-prompts"] --> G1["Prompt Generation"]
+        H["/ai/writing-suggestions"] --> H1["Writing Suggestions"]
+    end
+    
+    subgraph "Request/Response Flow - THỰC TẾ"
+        I["Frontend Request"] --> J["FastAPI Router /ai"]
+        J --> K["ai.py endpoint handler"]
+        K --> L["lm_studio.py functions"]
+        L --> M["LM Studio Server :1234"]
+        M --> N["AI Model Processing"]
+        N --> O["Stream/Response Back"]
+    end
+    
+    I --> A
+    I --> B
+    I --> C
+    I --> D
+    I --> E
+    I --> F
+    I --> G
+    I --> H
+```
+
+### 🔧 Configuration Management (THỰC TẾ)
+
+```mermaid
+graph TD
+    subgraph "Environment Configuration - HIỆN TẠI"
+        A[".env File"] --> B["LM Studio Settings"]
+        A --> C["AI Model Parameters"]
+        A --> D["Database Connection"]
+        A --> E["Performance Tuning"]
+    end
+    
+    subgraph "LM Studio Settings - THỰC TẾ"
+        B --> B1["LM_STUDIO_BASE_URL=http://host.docker.internal:1234/v1"]
+        B --> B2["LM_STUDIO_API_KEY=not-needed"]
+        B --> B3["LM_STUDIO_MODEL=deepseek-r1-distill-qwen-1.5b"]
+    end
+    
+    subgraph "AI Parameters - DEFAULTS"
+        C --> C1["DEFAULT_TEMPERATURE=0.7"]
+        C --> C2["DEFAULT_MAX_TOKENS=2000"]
+        C --> C3["MAX_INFERENCE_TIME=60000ms"]
+        C --> C4["DEFAULT_AI_MODEL=qwen/qwen3-1.7b"]
+    end
+    
+    subgraph "Analysis Configuration - THỰC TẾ"
+        F["ANALYSIS_MAX_TOKENS"] --> F1["general: 800"]
+        F --> F2["mood: 800"]
+        F --> F3["summary: 600"]
+        F --> F4["insights: 700"]
+    end
+```
+
+## 🚀 Performance Optimization & Monitoring
+
+### 📊 Performance Metrics Dashboard
+
+```mermaid
+graph LR
+    subgraph "Real-time Metrics"
+        A[Token Streaming Rate] --> A1[Tokens/Second]
+        B[Inference Time] --> B1[Response Latency]
+        C[SQL Execution] --> C1[Query Performance]
+        D[Memory Usage] --> D1[Context Management]
+    end
+    
+    subgraph "Health Monitoring"
+        E[LM Studio Status] --> E1[Connection Health]
+        F[Model Availability] --> F1[Load Status]
+        G[Database Connection] --> G1[SQL Tool Status]
+    end
+    
+    subgraph "Error Tracking"
+        H[API Errors] --> H1[Error Rates]
+        I[Timeout Events] --> I1[Performance Issues]
+        J[Retry Statistics] --> J1[Reliability Metrics]
+    end
+```
+
+### 🔧 Advanced Usage Patterns
+
+#### Batch Processing with AI
+```python
+async def process_multiple_entries(entries: List[str]):
+    """Process multiple journal entries with AI analysis"""
+    results = []
+    
+    for entry in entries:
+        try:
+            # Analyze each entry
+            analysis = await analyze_journal_entry(
+                entry_title="Batch Entry",
+                entry_content=entry,
+                analysis_type="general"
+            )
+            results.append(analysis)
+            
+            # Small delay to prevent overload
+            await asyncio.sleep(0.1)
+            
+        except Exception as e:
+            logger.error(f"Error processing entry: {e}")
+            results.append({"error": str(e)})
+    
+    return results
+```
+
+#### Custom Analysis Pipeline
+```python
+async def comprehensive_analysis(entry_content: str):
+    """Run comprehensive analysis pipeline"""
+    analyses = {}
+    
+    # Run different analysis types in parallel
+    tasks = [
+        analyze_journal_entry("Entry", entry_content, "general"),
+        analyze_journal_entry("Entry", entry_content, "mood"),
+        analyze_journal_entry("Entry", entry_content, "summary"),
+        analyze_journal_entry("Entry", entry_content, "insights")
+    ]
+    
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    analysis_types = ["general", "mood", "summary", "insights"]
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            analyses[analysis_types[i]] = {"error": str(result)}
+        else:
+            analyses[analysis_types[i]] = result
+    
+    return analyses
+```
+
+## 🛡️ Security & Best Practices
+
+### 🔐 Security Implementation
+
+```mermaid
+graph TD
+    subgraph "Input Validation"
+        A[User Input] --> B[Pydantic Validation]
+        B --> C[Content Sanitization]
+        C --> D[Length Limits]
+    end
+    
+    subgraph "SQL Security"
+        E[SQL Queries] --> F[Pattern Validation]
+        F --> G[Keyword Filtering]
+        G --> H[Injection Prevention]
+    end
+    
+    subgraph "API Security"
+        I[Rate Limiting] --> J[Request Throttling]
+        K[Authentication] --> L[JWT Validation]
+        M[CORS Configuration] --> N[Origin Validation]
+    end
+    
+    subgraph "Data Protection"
+        O[Sensitive Data Filtering] --> P[Password Masking]
+        Q[Output Sanitization] --> R[Response Cleaning]
+    end
+```
+
+### 📝 Development Guidelines
+
+#### Error Handling Best Practices
+```python
+async def robust_ai_call(request_data: dict):
+    """Example of robust AI call with comprehensive error handling"""
+    try:
+        # Validate input
+        if not request_data.get("message"):
+            raise ValueError("Message is required")
+        
+        # Process with timeout
+        async with asyncio.timeout(60):  # 60 second timeout
+            async for chunk in chat_with_ai(
+                message=request_data["message"],
+                streaming=True
+            ):
+                yield chunk
+                
+    except asyncio.TimeoutError:
+        yield "Request timed out. Please try a shorter message."
+    except ValueError as e:
+        yield f"Input validation error: {str(e)}"
+    except Exception as e:
+        logger.error(f"Unexpected error in AI call: {e}")
+        yield f"An unexpected error occurred. Please try again."
+```
+
+## 🔍 Troubleshooting & Diagnostics
+
+### 🚨 Common Issues Resolution
+
+```mermaid
+graph TD
+    A[Issue Categories] --> B[Connection Issues]
+    A --> C[Performance Problems]
+    A --> D[AI Response Issues]
+    A --> E[SQL Integration Issues]
+    
+    B --> B1[LM Studio Not Running]
+    B --> B2[Wrong Base URL]
+    B --> B3[Model Not Loaded]
+    
+    C --> C1[High Latency]
+    C --> C2[Memory Leaks]
+    C --> C3[Token Limits Exceeded]
+    
+    D --> D1[Empty Responses]
+    D --> D2[Malformed Output]
+    D --> D3[Inconsistent Quality]
+    
+    E --> E1[Database Connection Failed]
+    E --> E2[Schema Loading Issues]
+    E --> E3[SQL Execution Errors]
+```
+
+### 🔧 Diagnostic Tools
+
+#### Health Check Utility
+```python
+async def comprehensive_health_check():
+    """Comprehensive system health check"""
+    health_status = {
+        "lm_studio": await check_ai_service(),
+        "models": await get_available_models(),
+        "database": await check_database_connection(),
+        "sql_tools": await test_sql_tools()
+    }
+    
+    # Summarize health
+    all_healthy = all(
+        status.get("status") == "available" 
+        for status in health_status.values() 
+        if isinstance(status, dict)
+    )
+    
+    health_status["overall"] = "healthy" if all_healthy else "issues_detected"
+    return health_status
+
+async def check_database_connection():
+    """Check database connectivity for SQL tools"""
+    try:
+        database_url = os.getenv("DATABASE_URL")
+        if not database_url:
+            return {"status": "not_configured", "message": "DATABASE_URL not set"}
+        
+        from app.ai.sql_tool import PostgreSQLTool
+        sql_tool = PostgreSQLTool(database_url)
+        schema = sql_tool.get_database_schema()
+        
+        if schema.get("success"):
+            return {"status": "available", "tables": len(schema.get("tables", []))}
+        else:
+            return {"status": "error", "message": schema.get("error")}
+            
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+```
+
+## 📚 Summary & Future Roadmap
+
+### ✨ Current Capabilities
+
+The `lm_studio.py` module provides a comprehensive AI backend with:
+
+- **Universal Streaming Architecture** for real-time responses
+- **Intelligent SQL Processing** with auto-execution
+- **Multi-modal AI Functions** (chat, analysis, writing improvement)
+- **Robust Error Handling** and retry mechanisms
+- **Performance Optimization** with caching and connection management
+- **Security Features** with input validation and output sanitization
+
+### 🚀 Future Enhancements
+
+```mermaid
+graph LR
+    subgraph "Planned Features"
+        A[Vector Database Integration] --> A1[Semantic Search]
+        B[Advanced RAG] --> B1[Context Retrieval]
+        C[Multi-model Support] --> C1[Model Switching]
+        D[Advanced Analytics] --> D1[Usage Metrics]
+    end
+    
+    subgraph "Performance Improvements"
+        E[Connection Pooling] --> E1[Better Scalability]
+        F[Response Caching] --> F1[Reduced Latency]
+        G[Async Optimization] --> G1[Higher Throughput]
+    end
+    
+    subgraph "New AI Capabilities"
+        H[Image Analysis] --> H1[Vision Models]
+        I[Code Generation] --> I1[Programming Assistant]
+        J[Advanced Reasoning] --> J1[Chain of Thought]
+    end
+```
+
+### 🎯 Architecture Benefits
+
+- **Modular Design**: Easy to extend and maintain
+- **Performance Focused**: Optimized for real-time applications  
+- **Error Resilient**: Comprehensive error handling and recovery
+- **User Friendly**: Intuitive APIs with clear error messages
+- **Scalable**: Designed to handle multiple concurrent users
+- **Secure**: Built-in security features and input validation
+
+The system is designed to be the foundation for advanced AI-powered educational and productivity applications, with a focus on providing excellent user experience through real-time streaming and intelligent automation.
