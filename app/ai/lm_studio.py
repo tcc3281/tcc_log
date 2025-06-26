@@ -45,6 +45,7 @@ DEFAULT_MAX_INFERENCE_TIME = 60000  # Default 60 seconds in milliseconds
 
 # Load from environment variables or use defaults
 LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", DEFAULT_LM_STUDIO_BASE_URL)
+LM_KEY = os.getenv("LM_STUDIO_API_KEY", "not-needed")  # Not used in LM Studio
 AI_MODEL = os.getenv("LM_STUDIO_MODEL", DEFAULT_AI_MODEL)
 MAX_INFERENCE_TIME = int(os.getenv("LM_MAX_INFERENCE_TIME", DEFAULT_MAX_INFERENCE_TIME))
 
@@ -593,7 +594,7 @@ async def _post_process_sql_execution(content: str, streaming: bool = False):
     """Post-process agent response to execute SQL code if provided but not executed"""
     try:
         # Import the SQL tool for executing queries
-        from app.ai.sql_tool import PostgreSQLTool
+        from app.ai.sql_tool import SQLTool
         import re
         import os
         
@@ -605,7 +606,7 @@ async def _post_process_sql_execution(content: str, streaming: bool = False):
             logger.warning("No DATABASE_URL found, skipping SQL post-processing")
             return None
             
-        sql_tool = PostgreSQLTool(database_url)
+        sql_tool = SQLTool(database_url)
         
         # Look for SQL queries in the new format from model
         # Priority order: proper code blocks first, then direct SQL patterns
@@ -757,17 +758,18 @@ async def chat_with_ai(
         # Lấy thông tin database schema nếu có database và câu hỏi liên quan đến database
         if is_db_related:
             try:
-                from app.ai.sql_tool import PostgreSQLTool
+                from app.ai.sql_tool import SQLTool
                 import os
                 
                 database_url = os.getenv("DATABASE_URL")
                 if database_url:
                     logger.info("Fetching database schema for database-related question")
-                    pg_tool = PostgreSQLTool()
-                    schema_result = pg_tool.get_database_schema()
+                    sql_tool = SQLTool(database_url)
+                    schema_result = sql_tool.get_database_schema()
                     
                     if schema_result.get("success", False):
-                        schema_text = schema_result.get("schema", "")                        # Tạo prompt cho database schema
+                        schema_text = schema_result.get("schema", "")
+                        # Tạo prompt cho database schema
                         schema_prompt_prefix = "\n\n## Database Information\nYou have access to a PostgreSQL database with the following schema:\n\n```\n"
                         schema_prompt_suffix = "```\n\n### SQL Guidelines:\n1. Always analyze the schema first to understand the data structure\n2. Use appropriate SQL statements based on the task:\n   - SELECT: To retrieve data\n   - INSERT, UPDATE, DELETE: To modify data\n3. Always use proper SQL syntax and PostgreSQL features\n4. When writing SQL queries:\n   - Use explicit column names instead of * when possible\n   - Add proper JOIN conditions when joining tables\n   - Include appropriate WHERE clauses to filter data\n   - Use ORDER BY for sorting when needed\n   - Add LIMIT to control result size\n5. Format SQL queries properly with appropriate indentation and keywords in UPPERCASE\n6. Explain your SQL approach before providing the query\n\n### When answering database questions:\n1. Explain clearly which tables and columns are relevant to the question\n2. Break down complex requests into simpler steps\n3. Provide well-formatted SQL queries with comments explaining key parts\n4. Explain what the expected result would look like\n5. When suggesting data modifications, warn about potential data integrity risks"
                         
@@ -775,6 +777,8 @@ async def chat_with_ai(
                         logger.info("Database schema successfully added to context")
                     else:
                         logger.warning(f"Failed to get database schema: {schema_result.get('error', 'Unknown error')}")
+                else:
+                    logger.warning("No DATABASE_URL found for database schema")
             except Exception as db_error:
                 logger.error(f"Error preparing database context: {db_error}")
 

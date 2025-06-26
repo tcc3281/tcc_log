@@ -33,7 +33,7 @@ from langchain_core.callbacks.base import BaseCallbackHandler
 from langchain_core.messages import SystemMessage, HumanMessage
 
 # Import Tools
-from app.ai.sql_tool import PostgreSQLTool
+from app.ai.sql_tool import SQLTool
 
 
 class LangChainAgent:
@@ -139,92 +139,176 @@ class LangChainAgent:
         try:
             database_url = os.getenv("DATABASE_URL")
             if database_url:
-                logger.info("Adding PostgreSQL tools to agent")
-                pg_tool = PostgreSQLTool(database_url)
+                logger.info("Adding SQL tools to agent")
+                sql_tool = SQLTool(database_url)
                 
                 # Get schema and add to system prompt
-                schema_result = pg_tool.get_database_schema()
+                schema_result = sql_tool.get_database_schema()
                 if schema_result.get("success", False):
                     # Format schema as text
-                    schema_text = self._format_schema_for_prompt(schema_result)
+                    schema_text = schema_result.get("schema", "")
                     sql_prompt = self._get_sql_prompt(schema_text)
                     self.system_prompt += sql_prompt
+                    
+                    # Add few-shot learning examples
+                    try:
+                        few_shot_examples = sql_tool.generate_learning_prompt_addition()
+                        if few_shot_examples:
+                            self.system_prompt += few_shot_examples
+                            logger.info("Added few-shot learning examples to system prompt")
+                    except Exception as few_shot_error:
+                        logger.warning(f"Could not add few-shot examples: {few_shot_error}")
+                    
                     logger.info("Added database schema to system prompt")
                 else:
                     logger.warning(f"Could not get database schema: {schema_result.get('error', 'Unknown error')}")
-                    # Add dummy schema
-                    dummy_schema = self._create_dummy_schema()
-                    sql_prompt = self._get_sql_prompt(dummy_schema)
+                    # Add basic SQL prompt
+                    sql_prompt = self._get_basic_sql_prompt()
                     self.system_prompt += sql_prompt
                 
-                # Add PostgreSQL tools
-                pg_tools = pg_tool.get_langchain_tools()
-                self.tools.extend(pg_tools)
-                logger.info(f"Added {len(pg_tools)} PostgreSQL tools to agent")
+                # Add SQL tools from SQLTool
+                sql_tools = sql_tool.get_langchain_tools()
+                self.tools.extend(sql_tools)
+                logger.info(f"Added {len(sql_tools)} SQL tools to agent")
             else:
-                logger.info("No DATABASE_URL found, skipping PostgreSQL tools")
+                logger.info("No DATABASE_URL found, skipping SQL tools")
         except Exception as e:
-            logger.error(f"Error adding PostgreSQL tools: {e}")
-            # Add dummy schema even if connection fails
-            dummy_schema = self._create_dummy_schema()
-            sql_prompt = self._get_sql_prompt(dummy_schema)
+            logger.error(f"Error adding SQL tools: {e}")
+            # Add basic SQL prompt even if connection fails
+            sql_prompt = self._get_basic_sql_prompt()
             self.system_prompt += sql_prompt
     
+    # Removed _execute_sql_tool method - now handled by SQLTool.get_langchain_tools()
+    
+    def _get_basic_sql_prompt(self) -> str:
+        """Get basic SQL prompt without schema details"""
+        return """
+
+## Database Access & SQL Tools
+You have access to a PostgreSQL database through specialized SQL tools. Use these tools to help users with database-related questions.
+
+### Available SQL Tools:
+1. **sql_query**: Execute SQL queries against the database
+2. **get_database_schema**: Retrieve complete database schema information
+3. **list_tables**: Get a list of all available tables
+
+### Database Interaction Workflow:
+1. **First, understand the schema**: Use `get_database_schema` tool to understand the database structure
+2. **Analyze the user's question**: Determine what data they need and from which tables
+3. **Construct appropriate SQL**: Write clear, efficient SQL queries
+4. **Execute and explain**: Run queries using `sql_query` tool and explain results
+5. **Follow up**: Ask clarifying questions if needed
+
+### SQL Best Practices:
+1. **Always start by understanding the schema** - Use `get_database_schema` for complex questions
+2. **Write clear, readable SQL**:
+   - Use meaningful aliases (e.g., `u` for users, `e` for entries)
+   - Format with proper indentation
+   - Use explicit column names instead of SELECT *
+   - Add comments for complex queries
+3. **Optimize queries**:
+   - Use appropriate JOINs (INNER, LEFT, RIGHT)
+   - Add WHERE clauses to filter unnecessary data
+   - Use LIMIT for large result sets
+   - Use ORDER BY for sorted results
+4. **Handle data modifications carefully**:
+   - Explain what the operation will do before executing
+   - Use transactions for multiple related operations
+   - Always confirm before DELETE or UPDATE operations
+
+### Response Format for Database Questions:
+1. **Analysis**: "Let me check the database schema to understand the structure..."
+2. **Schema Review**: Use tools to understand relevant tables and relationships
+3. **SQL Construction**: "Based on the schema, I'll write a query to..."
+4. **Execution**: Run the SQL query using the sql_query tool
+5. **Results Interpretation**: Explain what the results mean in user-friendly terms
+6. **Follow-up**: Suggest related queries or ask if they need additional information
+
+### Error Handling:
+- If a query fails, explain the error and suggest corrections
+- If tables don't exist, use `list_tables` to show available options
+- For complex requests, break them down into smaller, manageable queries
+
+Remember: Always use the SQL tools to execute queries rather than just showing SQL code. Users want actual results from their database!
+"""
+
     def _format_schema_for_prompt(self, schema_result: Dict[str, Any]) -> str:
-        """Format database schema result into readable text for prompt"""
-        if not schema_result.get("success", False):
-            return "No database schema available"
-        
-        tables = schema_result.get("tables", [])
-        if not tables:
-            return "No tables found in database"
-        
-        schema_text = ""
-        for table in tables:
-            table_name = table.get("table_name", "unknown")
-            columns = table.get("columns", [])
-            primary_keys = table.get("primary_keys", [])
-            foreign_keys = table.get("foreign_keys", [])
-            
-            schema_text += f"\nTable: {table_name}\n"
-            schema_text += "Columns:\n"
-            
-            for col in columns:
-                col_name = col.get("column_name", "unknown")
-                data_type = col.get("data_type", "unknown")
-                is_nullable = col.get("is_nullable", "YES")
-                pk_indicator = " (PK)" if col_name in primary_keys else ""
-                schema_text += f"  - {col_name}: {data_type}{pk_indicator} (nullable: {is_nullable})\n"
-            
-            if foreign_keys:
-                schema_text += "Foreign Keys:\n"
-                for fk in foreign_keys:
-                    source_col = fk.get("column_name", "unknown")
-                    target_table = fk.get("foreign_table", "unknown")
-                    target_col = fk.get("foreign_column", "unknown")
-                    schema_text += f"  - {source_col} -> {target_table}.{target_col}\n"
-            
-            schema_text += "\n"
-        
-        return schema_text.strip()
+        """DEPRECATED: Format database schema result into readable text for prompt"""
+        # This method is no longer used with SQLTool implementation
+        logger.warning("_format_schema_for_prompt is deprecated with SQLTool")
+        return "Schema formatting not available with current SQLTool implementation"
     
     def _get_sql_prompt(self, schema_text: str) -> str:
         """Create specialized prompt for database interaction using prompt manager"""
-        return get_sql_prompt(schema_text)
+        try:
+            return get_sql_prompt(schema_text)
+        except Exception as e:
+            logger.warning(f"Error getting SQL prompt from prompt manager: {e}")
+            # Fallback to enhanced prompt with schema
+            return f"""
+
+## Database Information & SQL Tools
+You have access to a PostgreSQL database with the following schema:
+
+```
+{schema_text}
+```
+
+### Available SQL Tools:
+1. **sql_query**: Execute SQL queries against the database
+2. **get_database_schema**: Retrieve updated schema information if needed
+3. **list_tables**: Get a list of all available tables
+
+### Database Interaction Guidelines:
+
+#### For Data Retrieval Questions:
+1. **Analyze the schema above** to identify relevant tables and relationships
+2. **Construct efficient SQL queries** using proper JOINs and WHERE clauses
+3. **Execute queries immediately** using the `sql_query` tool
+4. **Interpret and explain results** in user-friendly language
+
+#### SQL Query Best Practices:
+- **Use table aliases** for readability (e.g., `u` for users, `e` for entries)
+- **Specify columns explicitly** instead of using SELECT *
+- **Apply appropriate filters** with WHERE clauses
+- **Use JOINs correctly** based on foreign key relationships shown above
+- **Add ORDER BY** for meaningful sorting
+- **Use LIMIT** for large datasets to avoid overwhelming output
+
+#### Response Workflow:
+1. **Quick Schema Analysis**: "Based on the database schema, I can see..."
+2. **SQL Query Construction**: "I'll query the [table_name] table to..."
+3. **Immediate Execution**: Use sql_query tool to run the query
+4. **Results Explanation**: "The results show..." with user-friendly interpretation
+5. **Additional Insights**: Suggest related queries or point out interesting patterns
+
+#### For Data Modification Requests:
+1. **Explain the operation** before executing
+2. **Show the SQL query** that will be used
+3. **Warn about potential impacts** (especially for UPDATE/DELETE)
+4. **Ask for confirmation** if the operation affects multiple records
+5. **Execute and confirm** the operation was successful
+
+#### Error Handling:
+- If a query fails, **explain the error** and **provide a corrected version**
+- If requested tables don't exist, **reference the schema above** and suggest alternatives
+- For complex requests, **break them into smaller steps** with multiple queries
+
+### Key Principles:
+- **Always execute SQL queries** using the sql_query tool - don't just show code
+- **Provide actual database results** to answer user questions
+- **Explain technical concepts** in business-friendly terms
+- **Be proactive** in suggesting additional useful queries
+- **Maintain data integrity** and warn about risky operations
+
+Remember: Your goal is to help users get actionable insights from their data by executing real SQL queries and explaining the results clearly!
+"""
 
     def _create_dummy_schema(self) -> str:
-        """Create a dummy schema when no tables are available in the database"""
-        return (
-            "No tables found in the database currently.\n\n"
-            "You can create tables with SQL commands like:\n"
-            "CREATE TABLE entries (\n"
-            "    id SERIAL PRIMARY KEY,\n"
-            "    content TEXT NOT NULL,\n" 
-            "    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n"
-            ");\n\n"
-            "Then insert data with:\n"
-            "INSERT INTO entries (content) VALUES ('Sample entry 1'), ('Sample entry 2');"
-        )
+        """DEPRECATED: Create a dummy schema when no tables are available in the database"""
+        # This method is no longer used with SQLTool implementation
+        logger.warning("_create_dummy_schema is deprecated with SQLTool")
+        return "No schema information available with current SQLTool implementation"
 
     async def chat(self, message: str, streaming: bool = False):
         """Chat with the agent, optionally with streaming"""
