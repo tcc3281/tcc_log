@@ -171,19 +171,29 @@ const GalleryPage = () => {
       {/* Tìm kiếm và sắp xếp */}
       <div className="mb-6 flex flex-col sm:flex-row gap-4">
         <div className="flex-1">
+          <label htmlFor="gallery-search" className="sr-only">
+            Tìm kiếm theo tên file
+          </label>
           <input
+            id="gallery-search"
             type="text"
             placeholder="Tìm kiếm theo tên file..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+            aria-label="Tìm kiếm ảnh theo tên file"
           />
         </div>
         <div className="w-full sm:w-48">
+          <label htmlFor="gallery-sort" className="sr-only">
+            Sắp xếp ảnh
+          </label>
           <select
+            id="gallery-sort"
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as 'newest' | 'oldest' | 'name')}
             className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+            aria-label="Sắp xếp ảnh theo"
           >
             <option value="newest">Mới nhất trước</option>
             <option value="oldest">Cũ nhất trước</option>
@@ -232,16 +242,12 @@ const GalleryPage = () => {
                   <img
                     src={getImageSrc(file.file_path)}
                     alt={file.file_name}
-                    className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-105"
+                    className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-105 bg-gray-100 block"
                     onError={(e) => {
                       console.error('Image load error:', file.file_path);
                       handleImageError(file.file_id);
                     }}
                     loading="lazy"
-                    style={{ 
-                      backgroundColor: '#f8f8f8',
-                      display: 'block'
-                    }}
                   />
                 )}
               </div>
@@ -269,6 +275,8 @@ const GalleryPage = () => {
               <button 
                 onClick={closeImageModal}
                 className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                aria-label="Close image modal"
+                title="Close image modal"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -329,7 +337,7 @@ const GalleryPage = () => {
             
             <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-between">
               <Link 
-                href={`/topics/entries/${selectedImage.entry_id}`}
+                href={`/entries/${selectedImage.entry_id}`}
                 className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
               >
                 Xem bài viết chứa ảnh này

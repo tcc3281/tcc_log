@@ -281,10 +281,10 @@ export default function ProfilePage() {
         </div>
       </div>
       
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block mb-2 text-sm font-medium">Username</label>
+      <form onSubmit={handleSubmit} className="space-y-4">        <div>
+          <label htmlFor="username" className="block mb-2 text-sm font-medium">Username</label>
           <input 
+            id="username"
             type="text"
             name="username"
             value={formData.username}
@@ -293,10 +293,10 @@ export default function ProfilePage() {
             required
           />
         </div>
-        
-        <div>
-          <label className="block mb-2 text-sm font-medium">Email</label>
+          <div>
+          <label htmlFor="email" className="block mb-2 text-sm font-medium">Email</label>
           <input 
+            id="email"
             type="email"
             name="email"
             value={formData.email}
@@ -309,10 +309,10 @@ export default function ProfilePage() {
         <div className="border-t pt-4 mt-4">
           <h2 className="text-lg font-semibold mb-2">Change Password</h2>
           <p className="text-sm text-gray-600 mb-3">Leave blank if you don't want to change your password</p>
-          
-          <div className="mb-4">
-            <label className="block mb-2 text-sm font-medium">Current Password</label>
+            <div className="mb-4">
+            <label htmlFor="current-password" className="block mb-2 text-sm font-medium">Current Password</label>
             <input 
+              id="current-password"
               type="password"
               name="password"
               value={formData.password}
@@ -320,10 +320,10 @@ export default function ProfilePage() {
               className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          
-          <div className="mb-4">
-            <label className="block mb-2 text-sm font-medium">New Password</label>
+            <div className="mb-4">
+            <label htmlFor="new-password" className="block mb-2 text-sm font-medium">New Password</label>
             <input 
+              id="new-password"
               type="password"
               name="newPassword"
               value={formData.newPassword}
@@ -331,10 +331,10 @@ export default function ProfilePage() {
               className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          
-          <div className="mb-4">
-            <label className="block mb-2 text-sm font-medium">Confirm New Password</label>
+            <div className="mb-4">
+            <label htmlFor="confirm-password" className="block mb-2 text-sm font-medium">Confirm New Password</label>
             <input 
+              id="confirm-password"
               type="password"
               name="confirmPassword"
               value={formData.confirmPassword}

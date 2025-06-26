@@ -112,39 +112,35 @@ const processLatexContent = (content: string): string => {
   return processed;
 };
 
-// ... rest of the file remains exactly the same ...
-
 // Configure markdown components
 const markdownComponents: Components = {
   code({ node, className, children, ...props }) {
     const match = /language-(\w+)/.exec(className || '');
     const isInline = !match;
-    const content = String(children).replace(/\n$/, '');
+    let content = String(children).replace(/\n$/, '');
     
-    // Check if this is a LaTeX code block
-    if (match && match[1] === 'latex') {
-      const processedContent = processLatexContent(content);
-      
-      return (
-        <div className="my-4">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[rehypeKatex]}
-            components={{
-              code: ({ node, ...props }) => <span {...props} />,
-              p: ({ node, children, ...props }) => {
-                const content = React.Children.toArray(children).join('');
-                if (content.startsWith('$$') && content.endsWith('$$')) {
-                  return <div className="math-block overflow-x-auto my-4" {...props}>{children}</div>;
-                }
-                return <p {...props}>{children}</p>;
-              }
-            }}
-          >
-            {processedContent}
-          </ReactMarkdown>
-        </div>
-      );
+    // Handle SQL code blocks specifically
+    if (match && match[1] === 'sql') {
+      // Add newline if SQL keyword starts immediately after language declaration
+      if (content.match(/^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)/i)) {
+        content = '\n' + content;
+      }
+
+      // Fix SQL formatting with proper spacing and newlines
+      content = content
+        .replace(/\bFROM\b/gi, '\nFROM')
+        .replace(/\bJOIN\b/gi, '\nJOIN') 
+        .replace(/\bLEFT JOIN\b/gi, '\nLEFT JOIN')
+        .replace(/\bRIGHT JOIN\b/gi, '\nRIGHT JOIN')
+        .replace(/\bINNER JOIN\b/gi, '\nINNER JOIN')
+        .replace(/\bWHERE\b/gi, '\nWHERE')
+        .replace(/\bORDER\s+BY\b/gi, '\nORDER BY')
+        .replace(/\bGROUP\s+BY\b/gi, '\nGROUP BY') // Fixed typo: was GROB BY
+        .replace(/\bHAVING\b/gi, '\nHAVING')
+        .replace(/\bLIMIT\b/gi, '\nLIMIT')
+        .replace(/\bOFFSET\b/gi, '\nOFFSET')
+        .replace(/^\s+/gm, '  ') // Indent continued lines
+        .trim();
     }
     
     return !isInline ? (
@@ -162,7 +158,8 @@ const markdownComponents: Components = {
         {children}
       </code>
     );
-  },  // Enhanced paragraph component to handle math blocks properly
+  },
+  // Enhanced paragraph component to handle math blocks properly
   p: ({ node, children, ...props }) => {
     const content = React.Children.toArray(children).join('');
     const trimmedContent = content.trim();
@@ -179,6 +176,13 @@ const markdownComponents: Components = {
         </div>
       );
     }
+    
+    // Check if this paragraph contains a markdown table
+    if (trimmedContent.includes('|') && trimmedContent.includes('---')) {
+      // Let the default markdown processor handle it as a table
+      return <div className="table-wrapper my-4" {...props}>{children}</div>;
+    }
+    
     return <p className="mb-3" {...props}>{children}</p>;
   },
   // Enhanced list components with better spacing
@@ -295,8 +299,15 @@ const ChatMessageDisplay: React.FC<ChatMessageDisplayProps> = ({
 
   const isUser = message.role === 'user';
 
-  // Process content with improved LaTeX handling
-  const processedContent = processLatexContent(message.content);
+  // Process content with improved LaTeX handling and table detection
+  let processedContent = processLatexContent(message.content);
+  
+  // Special handling for SQL results with tables
+  if (processedContent.includes('**✅ REAL Results:**') && processedContent.includes('|')) {
+    // Ensure proper spacing around tables
+    processedContent = processedContent.replace(/(\*\*✅ REAL Results:\*\*[^\n]*\n\n)/, '$1\n');
+  }
+  
   const processedThink = message.think ? processLatexContent(message.think) : '';
 
   return (

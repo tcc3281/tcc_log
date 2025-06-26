@@ -67,9 +67,7 @@ const EntriesPage = () => {
       try {
         // Fetch the topic details
         const topicResponse = await api.get(`/topics/${topicId}`);
-        setTopic(topicResponse.data);
-        
-        // Fetch all entries for this topic
+        setTopic(topicResponse.data);        // Fetch all entries for this topic
         const entriesResponse = await api.get(`/topics/${topicId}/entries`);
         // Log the API request for debugging
         console.log(`Fetching entries from: /topics/${topicId}/entries`);
@@ -329,22 +327,26 @@ const EntriesPage = () => {
         {showFilters && (
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 mb-4 border border-gray-200 dark:border-gray-700 shadow-sm">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="filter-start-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Date Range
                 </label>
                 <div className="flex gap-2 items-center">
                   <input 
+                    id="filter-start-date"
                     type="date" 
                     value={filterStartDate}
                     onChange={(e) => setFilterStartDate(e.target.value)}
                     className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    aria-label="Filter start date"
                   />
                   <span className="text-gray-500 dark:text-gray-400">to</span>
                   <input 
+                    id="filter-end-date"
                     type="date" 
                     value={filterEndDate}
                     onChange={(e) => setFilterEndDate(e.target.value)}
                     className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                    aria-label="Filter end date"
                   />
                 </div>
               </div>

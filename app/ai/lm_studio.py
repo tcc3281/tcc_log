@@ -2,24 +2,32 @@ import os
 import logging
 from typing import Optional, List, Dict, Any, Union
 import httpx
-import json
 import re
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import asyncio
 
+
 # LangChain imports
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage as LCMessage
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnableConfig
-from langchain_core.callbacks.manager import CallbackManager
-from langchain_core.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.agents import AgentExecutor, create_openai_functions_agent
 from langchain_core.tools import Tool
-from langchain.memory import ConversationBufferMemory
-from langchain_core.prompts import MessagesPlaceholder
+# Import prompt manager
+from .prompt_manager import get_prompt_manager, get_system_prompt
+
+# ANSI color codes for terminal output
+COLORS = {
+    "RED": "\033[91m",
+    "GREEN": "\033[92m",
+    "YELLOW": "\033[93m",
+    "BLUE": "\033[94m",
+    "MAGENTA": "\033[95m",
+    "CYAN": "\033[96m",
+    "WHITE": "\033[97m",
+    "BOLD": "\033[1m",
+    "UNDERLINE": "\033[4m",
+    "RESET": "\033[0m"
+}
 
 # Load environment variables
 load_dotenv()
@@ -30,13 +38,14 @@ logger = logging.getLogger(__name__)
 
 # Default configuration
 DEFAULT_LM_STUDIO_BASE_URL = "http://127.0.0.1:1234/v1"
-DEFAULT_AI_MODEL = "lmstudio-community/Qwen2.5-7B-Instruct-GGUF"
+DEFAULT_AI_MODEL = "qwen/qwen3-1.7b"
 DEFAULT_MAX_TOKENS = 2000
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_MAX_INFERENCE_TIME = 60000  # Default 60 seconds in milliseconds
 
 # Load from environment variables or use defaults
 LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", DEFAULT_LM_STUDIO_BASE_URL)
+LM_KEY = os.getenv("LM_STUDIO_API_KEY", "not-needed")  # Not used in LM Studio
 AI_MODEL = os.getenv("LM_STUDIO_MODEL", DEFAULT_AI_MODEL)
 MAX_INFERENCE_TIME = int(os.getenv("LM_MAX_INFERENCE_TIME", DEFAULT_MAX_INFERENCE_TIME))
 
@@ -73,149 +82,18 @@ class ParsedAIResponse(BaseModel):
     answer: str
     raw_content: str
 
-# Common system prompts
-SYSTEM_PROMPTS = {
-    "default_chat": """You are a helpful AI assistant. 
-You can structure your responses using <think>...</think> tags to show your reasoning process.
-Think step by step and provide a detailed response.
-Just list pipeline steps and don't be too detailed.
-For example:    
-<think>
-The user is asking about... Let me consider this carefully...
-</think>
-
-Then provide your main response after the think section.
-
-You have to use Latex to show mathematical expressions. When using LaTeX for mathematical expressions, follow these guidelines:
-1. For inline math (within a sentence), use \\(...\\) delimiters:
-   Example: "The formula \\(E = mc^2\\) is famous."
-
-2. For display math (on its own line), use \\[...\\] delimiters:
-   Example: "The quadratic formula is:
-   \\[
-   x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}
-   \\]"
-
-3. For matrices and other environments, use \\[...\\] with the appropriate environment:
-   Example: "The matrix A is:
-   \\[
-   \\begin{bmatrix}
-   a_{11} & a_{12} \\\\
-   a_{21} & a_{22}
-   \\end{bmatrix}
-   \\]"
-
-If there are compared requirement, create table with markdown to compare between objects.
-Bold the key word in the answer.
-Provide clear, concise, and accurate responses to the user's questions like:
-1. Overview of the topic
-2. Key points or steps
-...
-Be friendly and conversational in your replies.
-You should use Markdown formatting in your responses, including headers, bulleted lists, tables using the GFM (GitHub Flavored Markdown) syntax.
-Finally, provide a conclusion or summary of your response.""",
-
-    "journal_analysis": {
-        "general": """Analyze this journal entry briefly. Focus on key themes and main points.
-                     Keep your response under 200 words.
-                     
-                     First, put your analytical thinking inside <think> tags. Then provide your final answer separately.
-                     Example: 
-                     <think>
-                     Here I analyze the key themes...
-                     </think>
-                     
-                     My analysis of your journal entry:
-                     [Your final response]""",
-                      
-        "mood": """Analyze the writer's mood and emotional state in 3-5 sentences.
-                   Focus only on emotions and mood.
-                   
-                   First, put your analytical thinking inside <think> tags. Then provide your final answer separately.
-                   Example: 
-                   <think>
-                   Here I analyze the emotions...
-                   </think>
-                   
-                   Mood analysis:
-                   [Your final response]""",
-                   
-        "summary": """Summarize the main points in 3-4 sentences.
-                     Focus on key events and emotions only.
-                     
-                     First, put your analytical thinking inside <think> tags. Then provide your final answer separately.
-                     Example: 
-                     <think>
-                     Here I identify the key points...
-                     </think>
-                     
-                     Summary:
-                     [Your final response]""",
-                      
-        "insights": """Provide 2-3 key insights about the writer's thoughts or patterns.
-                      Keep it brief and focused.
-                      
-                      First, put your analytical thinking inside <think> tags. Then provide your final answer separately.
-                      Example: 
-                      <think>
-                      Here I analyze patterns...
-                      </think>
-                      
-                      Key insights:
-                      [Your final response]"""
-    },
-
-    "writing_improvement": {
-        "grammar": """You are an expert English grammar editor. Your task is to correct grammar mistakes, fix punctuation, and ensure proper sentence structure while preserving the original meaning and tone. Only make necessary corrections without changing the writing style.""",
-        
-        "style": """You are a professional writing coach. Improve the writing style to make it more engaging, clear, and natural. Enhance sentence flow, vary sentence length, and improve transitions while maintaining the author's voice and message.""",
-        
-        "vocabulary": """You are an English vocabulary specialist. Replace basic or repetitive words with more sophisticated, precise vocabulary. Improve word choice to make the writing more expressive and eloquent while keeping it natural and accessible.""",
-        
-        "complete": """You are a comprehensive writing editor. Improve this English text by:
-1. Correcting grammar, spelling, and punctuation errors
-2. Enhancing vocabulary with more precise and varied word choices
-3. Improving sentence structure and flow
-4. Making the writing more engaging and polished
-5. Ensuring clarity and coherence
-
-Maintain the original meaning, tone, and personal voice while making it significantly better."""
-    },
-
-    "writing_suggestions": """You are an expert English writing tutor. Analyze the provided text and give specific, actionable feedback in these categories:
-
-1. Grammar & Mechanics: Point out specific grammar errors, punctuation issues, or spelling mistakes
-2. Vocabulary & Word Choice: Suggest better word choices or identify repetitive/weak words
-3. Style & Flow: Comment on sentence structure, transitions, and overall readability
-4. Content & Clarity: Identify unclear parts or suggest ways to express ideas more effectively
-
-Format your response as:
-**Grammar & Mechanics:**
-[Your feedback here]
-
-**Vocabulary & Word Choice:**
-[Your feedback here]
-
-**Style & Flow:**
-[Your feedback here]
-
-**Content & Clarity:**
-[Your feedback here]
-
-Be specific and constructive in your feedback.""",
-
-    "journaling_prompts": """You are a creative assistant specialized in journaling. 
-                           Create engaging, thoughtful and inspiring journaling prompts.
-                           Respond with a list of prompts, each prompt on a new line, starting with a bullet point (-)."""
-}
-
-# Token limits for different analysis types
+# Token limits for different analysis types (moved from SYSTEM_PROMPTS)
 ANALYSIS_MAX_TOKENS = {
     "general": 800,
     "mood": 800,
     "summary": 600,
     "insights": 700
 }
+
+# Helper function to get system prompts
+def get_system_prompts():
+    """Get system prompts from prompt manager"""
+    return get_prompt_manager().prompts.get("system_prompts", {})
 
 def get_chatopen_ai_instance(model: str = None, temperature: float = None, max_tokens: int = None) -> ChatOpenAI:
     """Get a reusable ChatOpenAI instance"""
@@ -489,7 +367,7 @@ async def analyze_journal_entry(
     model: Optional[str] = None
 ) -> Dict[str, Any]:
     """Analyze a journal entry using the AI model."""
-    system_prompt = SYSTEM_PROMPTS["journal_analysis"].get(analysis_type, SYSTEM_PROMPTS["journal_analysis"]["general"])
+    system_prompt = get_prompt_manager().get_analysis_prompt(analysis_type)
     max_tokens = ANALYSIS_MAX_TOKENS.get(analysis_type, 800)
     
     content = f"Journal title: {entry_title}\n\nJournal content:\n{entry_content}"
@@ -512,7 +390,7 @@ async def improve_writing(
     model: Optional[str] = None
 ) -> Dict[str, Any]:
     """Improve the writing quality of English text."""
-    system_prompt = SYSTEM_PROMPTS["writing_improvement"].get(improvement_type, SYSTEM_PROMPTS["writing_improvement"]["complete"])
+    system_prompt = get_prompt_manager().get_writing_improvement_prompt(improvement_type)
     
     content = f"Please improve this text:\n\n{text}"
     
@@ -540,7 +418,7 @@ async def suggest_writing_improvements(
     
     result = await process_ai_request(
         content=content,
-        system_prompt=SYSTEM_PROMPTS["writing_suggestions"],
+        system_prompt=get_system_prompt("writing_suggestions"),
         model=model,
         temperature=0.4,
         max_tokens=1000,
@@ -567,7 +445,7 @@ async def generate_journaling_prompts(
     try:
         result = await process_ai_request(
             content=base_content,
-            system_prompt=SYSTEM_PROMPTS["journaling_prompts"],
+            system_prompt=get_system_prompt("journaling_prompts"),
             model=model,
             temperature=0.8,  # Higher temperature for creativity
             max_tokens=500,
@@ -696,100 +574,6 @@ async def query_lm_studio_stream(request: AIRequest):
         yield f"Error: {str(e)}"
 
 # Agent functionality (simplified, keeping only what's actually used)
-class LangChainAgent:
-    """Simplified LangChain Agent class"""
-    def __init__(
-        self,
-        model_name: str = AI_MODEL,
-        temperature: float = DEFAULT_TEMPERATURE,
-        max_tokens: int = DEFAULT_MAX_TOKENS,
-        tools: Optional[List[Tool]] = None,
-        system_prompt: Optional[str] = None
-    ):
-        self.model_name = model_name
-        self.temperature = temperature
-        self.max_tokens = max_tokens
-        self.tools = tools or []
-        self.system_prompt = system_prompt or SYSTEM_PROMPTS["default_chat"]
-        
-        # Initialize memory
-        self.memory = ConversationBufferMemory(
-            memory_key="chat_history",
-            return_messages=True
-        )
-        
-        # Initialize LLM
-        self.llm = get_chatopen_ai_instance(self.model_name, self.temperature, self.max_tokens)
-        
-        # Create prompt template
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system", self.system_prompt),
-            MessagesPlaceholder(variable_name="chat_history"),
-            ("human", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad"),
-        ])
-        
-        # Create agent and executor
-        self.agent = create_openai_functions_agent(
-            llm=self.llm,
-            tools=self.tools,
-            prompt=self.prompt
-        )
-        
-        self.agent_executor = AgentExecutor(
-            agent=self.agent,
-            tools=self.tools,
-            memory=self.memory,
-            verbose=True
-        )
-    
-    async def chat(self, message: str, streaming: bool = False):
-        """Process a chat message with the agent."""
-        try:
-            if streaming:
-                # Stream the response
-                collected_content = ""
-                async for chunk in self.agent_executor.astream({"input": message}):
-                    if "output" in chunk:
-                        content = chunk["output"]
-                        collected_content += content
-                        yield content
-                
-                # Add to memory
-                self.memory.chat_memory.add_user_message(message)
-                self.memory.chat_memory.add_ai_message(collected_content)
-            else:
-                # Get complete response
-                response = await self.agent_executor.ainvoke({"input": message})
-                
-                # Add to memory
-                self.memory.chat_memory.add_user_message(message)
-                self.memory.chat_memory.add_ai_message(response["output"])
-                
-                yield {
-                    "content": response["output"],
-                    "model": self.model_name,
-                    "usage": None  # LangChain doesn't provide usage stats
-                }
-        
-        except Exception as e:
-            logger.error(f"Error in agent chat: {e}")
-            error_msg = str(e)
-            if "Client disconnected" in error_msg:
-                error_msg = "The response took too long. Try asking a shorter question."
-            
-            if streaming:
-                yield f"Error: {error_msg}"
-            else:
-                yield {
-                    "content": f"Error: {error_msg}",
-                    "model": self.model_name,
-                    "error": True
-                }
-    
-    def clear_memory(self):
-        """Clear the conversation memory"""
-        self.memory.clear()
 
 def create_default_tools() -> List[Tool]:
     """Create default tools for the agent"""
@@ -806,6 +590,154 @@ def create_default_tools() -> List[Tool]:
         )
     ]
 
+async def _post_process_sql_execution(content: str, streaming: bool = False):
+    """Post-process agent response to execute SQL code if provided but not executed"""
+    try:
+        # Import the SQL tool for executing queries
+        from app.ai.sql_tool import SQLTool
+        import re
+        import os
+        
+        logger.info(f"🔍 Starting SQL post-processing, content length: {len(content)}")
+        
+        # Initialize SQL tool if needed for post-processing
+        database_url = os.getenv("DATABASE_URL")
+        if not database_url:
+            logger.warning("No DATABASE_URL found, skipping SQL post-processing")
+            return None
+            
+        sql_tool = SQLTool(database_url)
+        
+        # Look for SQL queries in the new format from model
+        # Priority order: proper code blocks first, then direct SQL patterns
+        sql_patterns = [
+            r'```\s*\n([^`]+)\n```',  # ``` SQL QUERY ``` (new format without sql tag)
+            r'```sql\s*\n([^`]+)\n```',  # ```sql SELECT ... ``` (old format)
+            r'```([^`]+)```',  # ```SQL QUERY``` (single line)
+        ]
+        
+        # Check if response already contains actual results (not just fake numbers)
+        has_real_results = any(indicator in content.lower() for indicator in [
+            'rows returned', 'query executed successfully', 'actual count', 'real count',
+            'query result:', 'execution completed', 'data retrieved'
+        ])
+        
+        # Also check for specific database execution indicators
+        real_db_indicators = [
+            '🔧 post-processed sql execution', '✅ query result:', 'count:',
+            'tool result:', '📋 result:', 'database connection'
+        ]
+        
+        has_real_results = has_real_results or any(indicator in content.lower() for indicator in real_db_indicators)
+        
+        logger.info(f"🔍 has_real_results: {has_real_results}")
+        
+        # Extract and execute SQL queries from model response
+        logger.info("🔍 Extracting SQL queries from model response...")
+        
+        sql_executed = False
+        executed_queries = set()  # Track executed queries to avoid duplicates
+        
+        for i, pattern in enumerate(sql_patterns):
+            logger.debug(f"🔍 Checking pattern {i+1}: {pattern}")
+            matches = re.findall(pattern, content, re.IGNORECASE | re.MULTILINE | re.DOTALL)
+            logger.debug(f"🔍 Pattern {i+1} matches: {len(matches)}")
+            
+            for j, match in enumerate(matches):
+                # Extract SQL query
+                if isinstance(match, tuple):
+                    sql_query = match[0] if match[0] else (match[1] if len(match) > 1 else "")
+                else:
+                    sql_query = match
+                
+                # Clean and validate SQL query
+                sql_query = _clean_sql_query(sql_query)
+                if not sql_query:
+                    continue
+                
+                # Skip if we already executed this query
+                query_key = sql_query.strip().lower().replace(' ', '').replace('\n', '')
+                if query_key in executed_queries:
+                    logger.debug(f"🔍 Skipping duplicate query: {sql_query[:50]}...")
+                    continue
+                
+                # Validate SQL query
+                if not _is_valid_sql_query(sql_query):
+                    logger.warning(f"🔍 Skipping invalid query: '{sql_query[:50]}...'")
+                    continue
+                
+                try:
+                    logger.info(f"🔧 Executing SQL: {sql_query[:100]}...")
+                    executed_queries.add(query_key)
+                    
+                    # Execute the query
+                    result = sql_tool.execute_query(sql_query)
+                    
+                    if result.get("success", False):
+                        query_result = result.get("result", [])
+                        row_count = result.get("row_count", 0)
+                        
+                        # Print the actual result to console for debugging
+                        print(f"\n{COLORS['GREEN']}🔧 Post-processed SQL execution:{COLORS['RESET']}")
+                        print(f"{COLORS['CYAN']}Query: {sql_query}{COLORS['RESET']}")
+                        print(f"{COLORS['GREEN']}✅ Result: {row_count} rows{COLORS['RESET']}")
+                        
+                        # Return structured result for API to send to frontend
+                        real_result = {
+                            "type": "sql_execution",
+                            "query": sql_query,
+                            "success": True,
+                            "row_count": row_count,
+                            "result": query_result
+                        }
+                        
+                        if query_result:
+                            if len(query_result) == 1 and len(query_result[0]) == 1:
+                                # Single value result (like COUNT)
+                                value = list(query_result[0].values())[0]
+                                print(f"{COLORS['YELLOW']}REAL Count: {value} (overriding any fake results){COLORS['RESET']}")
+                                real_result["value"] = value
+                                real_result["message"] = f"**✅ REAL Result:** {value} (actual count from database)"
+                            else:
+                                # Multiple rows/columns - format as nice table
+                                print(f"{COLORS['WHITE']}Data Preview:{COLORS['RESET']}")
+                                
+                                # Format as markdown table
+                                formatted_table = _format_query_results_as_table(query_result)
+                                real_result["message"] = f"**✅ REAL Results:** {row_count} rows\n\n{formatted_table}"
+                                
+                                # Console preview (first 3 rows only)
+                                for k, row in enumerate(query_result[:3]):
+                                    row_dict = dict(row)
+                                    # Hide sensitive data in console
+                                    if 'password_hash' in row_dict:
+                                        row_dict['password_hash'] = '[HIDDEN]'
+                                    row_text = f"Row {k+1}: {row_dict}"
+                                    print(f"  • {row_text}")
+                                if len(query_result) > 3:
+                                    extra_text = f"... and {len(query_result) - 3} more rows"
+                                    print(f"  {extra_text}")
+                        
+                        logger.info("✅ SQL execution successful, returning first result")
+                        sql_executed = True
+                        return real_result  # Return first successful result
+                    else:
+                        logger.error(f"SQL execution failed: {result.get('error', 'Unknown error')}")
+                        
+                except Exception as e:
+                    logger.error(f"Error executing SQL from agent response: {e}")
+        
+        if not sql_executed:
+            logger.warning("🔍 No valid SQL queries found or executed")
+        
+        return None
+                        
+    except Exception as e:
+        logger.warning(f"Error in SQL post-processing: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 async def chat_with_ai(
     message: str,
     history: List[Dict[str, str]] = None,
@@ -816,61 +748,293 @@ async def chat_with_ai(
     tools: Optional[List[Tool]] = None
 ):
     """Process a chat message with AI."""
-    if use_agent:
-        # Create agent instance
+    try:
+        # Kiểm tra message có liên quan đến database không để chuẩn bị thông tin schema
+        is_db_related = any(keyword in message.lower() for keyword in 
+                           ["database", "sql", "query", "table", "schema", "select", "insert", 
+                           "update", "delete", "join", "where", "postgres", "postgresql"])
+        
+        db_schema_prompt = ""
+        # Lấy thông tin database schema nếu có database và câu hỏi liên quan đến database
+        if is_db_related:
+            try:
+                from app.ai.sql_tool import SQLTool
+                import os
+                
+                database_url = os.getenv("DATABASE_URL")
+                if database_url:
+                    logger.info("Fetching database schema for database-related question")
+                    sql_tool = SQLTool(database_url)
+                    schema_result = sql_tool.get_database_schema()
+                    
+                    if schema_result.get("success", False):
+                        schema_text = schema_result.get("schema", "")
+                        # Tạo prompt cho database schema
+                        schema_prompt_prefix = "\n\n## Database Information\nYou have access to a PostgreSQL database with the following schema:\n\n```\n"
+                        schema_prompt_suffix = "```\n\n### SQL Guidelines:\n1. Always analyze the schema first to understand the data structure\n2. Use appropriate SQL statements based on the task:\n   - SELECT: To retrieve data\n   - INSERT, UPDATE, DELETE: To modify data\n3. Always use proper SQL syntax and PostgreSQL features\n4. When writing SQL queries:\n   - Use explicit column names instead of * when possible\n   - Add proper JOIN conditions when joining tables\n   - Include appropriate WHERE clauses to filter data\n   - Use ORDER BY for sorting when needed\n   - Add LIMIT to control result size\n5. Format SQL queries properly with appropriate indentation and keywords in UPPERCASE\n6. Explain your SQL approach before providing the query\n\n### When answering database questions:\n1. Explain clearly which tables and columns are relevant to the question\n2. Break down complex requests into simpler steps\n3. Provide well-formatted SQL queries with comments explaining key parts\n4. Explain what the expected result would look like\n5. When suggesting data modifications, warn about potential data integrity risks"
+                        
+                        db_schema_prompt = schema_prompt_prefix + schema_text + schema_prompt_suffix
+                        logger.info("Database schema successfully added to context")
+                    else:
+                        logger.warning(f"Failed to get database schema: {schema_result.get('error', 'Unknown error')}")
+                else:
+                    logger.warning("No DATABASE_URL found for database schema")
+            except Exception as db_error:
+                logger.error(f"Error preparing database context: {db_error}")
+
+        if use_agent:
+            agent_status = f"{COLORS['GREEN']}{COLORS['BOLD']}[AGENT MODE ACTIVE]{COLORS['RESET']}"
+            print(f"\n{agent_status} Initializing LangChainAgent with model: {model or AI_MODEL}")
+            logger.info(f"Using LangChainAgent for message: {message}")
+            # Initialize agent with error handling
+            try:
+                from app.ai.agent import LangChainAgent  # Import agent class
+                agent = LangChainAgent(
+                    model_name=model or AI_MODEL,
+                    system_prompt=system_prompt,
+                    tools=tools  # Pass tools as-is, don't fallback to default tools
+                )
+                print(f"{COLORS['GREEN']}✓ LangChainAgent initialized successfully{COLORS['RESET']}")
+                
+                # Stream or non-stream response using enhanced streaming
+                if streaming:
+                    print(f"{COLORS['CYAN']}🌊 Starting streaming response...{COLORS['RESET']}")
+                    # Use agent streaming method that maintains tool access
+                    collected_content = ""
+                    async for chunk in agent.chat_with_agent_streaming(message):
+                        if chunk:  # Only yield non-empty chunks
+                            collected_content += chunk
+                            yield chunk
+                    
+                    # Post-process SQL execution after all chunks are collected
+                    real_sql_result = await _post_process_sql_execution(collected_content, streaming=True)
+                    if real_sql_result and real_sql_result.get("success", False):
+                        # Yield real result as a special message
+                        real_message = real_sql_result.get("message", "")
+                        if real_message:
+                            yield f"\n\n{real_message}"
+                else:
+                    print(f"{COLORS['BLUE']}💬 Processing non-streaming response...{COLORS['RESET']}")
+                    # Use non-streaming mode
+                    async for response in agent.chat(message, streaming=False):
+                        if response:  # Only yield non-empty responses
+                            yield response
+                return  # Exit after successful agent processing
+            except Exception as agent_error:
+                logger.error(f"Agent error: {agent_error}")
+                fallback_message = f"{COLORS['RED']}{COLORS['BOLD']}[AGENT FAILED]{COLORS['RESET']} Falling back to non-agent mode: {agent_error}"
+                print(fallback_message)
+                # Continue to non-agent mode below
+
+        # Non-agent mode (fallback or original setting)
+        non_agent_status = f"{COLORS['YELLOW']}{COLORS['BOLD']}[NON-AGENT MODE]{COLORS['RESET']}"
+        print(f"\n{non_agent_status} Using standard chat mode with model: {model or AI_MODEL}")
+        base_system_prompt = system_prompt or get_system_prompt("default_chat")
+        
+        # Thêm thông tin database schema vào prompt nếu cần
+        if db_schema_prompt and is_db_related:
+            enhanced_system_prompt = base_system_prompt + db_schema_prompt
+            logger.info("Enhanced system prompt with database schema information")
+        else:
+            enhanced_system_prompt = base_system_prompt
+        
+        request = await create_ai_request(
+            content=message,
+            system_prompt=enhanced_system_prompt,
+            model=model,
+            temperature=0.7,
+            max_tokens=2000,
+            history=history
+        )
+        
+        if streaming:
+            # Add SQL post-processing for agent mode
+            if use_agent:
+                collected_content = ""
+                async for chunk in query_lm_studio_stream(request):
+                    if isinstance(chunk, str) and not chunk.startswith('{"type":"stats"'):
+                        collected_content += chunk
+                        yield chunk
+                    else:
+                        yield chunk
+                
+                # Post-process to execute SQL if agent provided code but didn't execute it
+                await _post_process_sql_execution(collected_content, streaming=True)
+            else:
+                async for chunk in query_lm_studio_stream(request):
+                    yield chunk if not (isinstance(chunk, str) and chunk.startswith('{"type":"stats"')) else chunk
+        else:
+            response = await query_lm_studio(request)
+            result = {
+                "content": response.content,
+                "model": response.model,
+                "usage": response.usage
+            }
+            
+            # Post-process SQL for agent mode
+            if use_agent:
+                await _post_process_sql_execution(response.content, streaming=False)
+            
+            yield result
+            
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        error_msg = "The response took too long. Try asking a shorter question." if "Client disconnected" in str(e) else str(e)
+        yield {
+            "content": f"Error: {error_msg}",
+            "model": model or AI_MODEL,
+            "error": True
+        }
+
+async def chat_with_ai_agent_enhanced_streaming(
+    message: str,
+    model: Optional[str] = None,
+    system_prompt: Optional[str] = None,
+    tools: Optional[List[Tool]] = None
+):
+    """
+    Enhanced streaming chat with agent that provides detailed events.
+    This function gives more granular control over the streaming process,
+    showing tool usage, thinking process, and final responses.
+    """
+    try:
+        agent_status = f"{COLORS['GREEN']}{COLORS['BOLD']}[ENHANCED AGENT STREAMING]{COLORS['RESET']}"
+        print(f"\n{agent_status} Initializing LangChainAgent with model: {model or AI_MODEL}")
+        
+        from app.ai.agent import LangChainAgent
         agent = LangChainAgent(
             model_name=model or AI_MODEL,
             system_prompt=system_prompt,
-            tools=tools or create_default_tools()
+            tools=tools  # Pass tools as-is, don't fallback to default tools
         )
+        print(f"{COLORS['GREEN']}✓ Enhanced streaming agent initialized{COLORS['RESET']}")
+        print(f"{COLORS['CYAN']}🔍 Starting detailed streaming...{COLORS['RESET']}")
         
-        # Use agent for chat
-        if streaming:
-            async for response in agent.chat(message, streaming=True):
-                yield response
-        else:
-            async for response in agent.chat(message, streaming=False):
-                yield response
-    else:
-        # Use simplified chat implementation
-        system_prompt = system_prompt or SYSTEM_PROMPTS["default_chat"]
+        # Use the enhanced event streaming
+        async for event_chunk in agent.astream_events(message):
+            if event_chunk:
+                yield event_chunk
+                
+    except Exception as e:
+        logger.error(f"Enhanced agent streaming error: {e}")
+        error_msg = f"Enhanced streaming error: {str(e)}"
+        yield error_msg
+
+def _clean_sql_query(sql_query: str):
+    """Clean and extract valid SQL query from text"""
+    if not sql_query:
+        return None
+    
+    # Remove leading/trailing whitespace
+    sql_query = sql_query.strip()
+    
+    # Remove comments and empty lines
+    lines = []
+    for line in sql_query.split('\n'):
+        line = line.strip()
+        if line and not line.startswith('--'):
+            lines.append(line)
+    
+    if not lines:
+        return None
+    
+    # Join lines and clean up
+    cleaned = ' '.join(lines)
+    
+    # Remove extra whitespace
+    cleaned = ' '.join(cleaned.split())
+    
+    # Ensure semicolon at end if missing
+    if cleaned and not cleaned.endswith(';'):
+        cleaned += ';'
+    
+    logger.debug(f"Cleaned SQL: '{cleaned}'")
+    return cleaned
+
+def _is_valid_sql_query(sql_query: str) -> bool:
+    """Validate if the string is a proper SQL query"""
+    if not sql_query or len(sql_query) < 8:
+        return False
+    
+    # Check for SQL keywords at start
+    sql_keywords = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'SHOW', 'DESCRIBE', 'EXPLAIN']
+    first_word = sql_query.strip().split()[0].upper()
+    
+    if first_word not in sql_keywords:
+        return False
+    
+    # Skip example or placeholder queries
+    forbidden_words = ['example', 'placeholder', 'your_table', 'your_column', 'sample_data']
+    if any(word in sql_query.lower() for word in forbidden_words):
+        return False
+    
+    # Skip if it contains explanatory text mixed with SQL
+    explanatory_words = ['need to', 'according to', 'explanation', 'this query', 'the result']
+    if any(phrase in sql_query.lower() for phrase in explanatory_words):
+        return False
+    
+    return True
+
+def _format_query_results_as_table(query_results):
+    """Format SQL query results as a nice markdown table"""
+    if not query_results:
+        return "*No data found*"
+    
+    # Get column names from first row
+    first_row = dict(query_results[0])
+    columns = list(first_row.keys())
+    
+    # Filter out sensitive columns for display
+    sensitive_columns = ['password_hash', 'password', 'token', 'secret']
+    display_columns = [col for col in columns if not any(sens in col.lower() for sens in sensitive_columns)]
+    
+    # Limit number of columns for readability (max 6)
+    if len(display_columns) > 6:
+        display_columns = display_columns[:5] + ['...more']
+    
+    # Create markdown table header
+    table_lines = []
+    table_lines.append("| " + " | ".join(display_columns) + " |")
+    table_lines.append("| " + " | ".join(["---"] * len(display_columns)) + " |")
+    
+    # Add rows (limit to 10 for readability)
+    max_rows = min(10, len(query_results))
+    for i in range(max_rows):
+        row = dict(query_results[i])
+        row_values = []
         
-        try:
-            request = await create_ai_request(
-                content=message,
-                system_prompt=system_prompt,
-                model=model,
-                temperature=0.7,
-                max_tokens=2000,  # Larger context for chat
-                history=history
-            )
+        for col in display_columns:
+            if col == '...more':
+                row_values.append(f"+{len(columns) - 5} cols")
+                continue
+                
+            value = row.get(col, '')
             
-            if streaming:
-                # Stream the AI response
-                async for chunk in query_lm_studio_stream(request):
-                    # Check if this is a stats message (JSON string)
-                    if isinstance(chunk, str) and chunk.startswith('{"type":"stats"'):
-                        yield chunk  # Pass through the stats data
-                    else:
-                        yield chunk  # Pass through regular content
+            # Format different data types
+            if value is None:
+                formatted_value = "*null*"
+            elif hasattr(value, 'strftime'):  # datetime objects
+                formatted_value = value.strftime("%Y-%m-%d %H:%M")
+            elif isinstance(value, str) and len(value) > 30:
+                formatted_value = value[:27] + "..."
+            elif isinstance(value, bool):
+                formatted_value = "✓" if value else "✗"
             else:
-                # Query the AI with retry logic
-                response = await query_lm_studio(request)
-                yield {
-                    "content": response.content,
-                    "model": response.model,
-                    "usage": response.usage
-                }
-        
-        except Exception as e:
-            logger.error(f"Error in chat: {e}")
-            error_msg = str(e)
-            if "Client disconnected" in error_msg:
-                error_msg = "The response took too long. Try asking a shorter question."
+                formatted_value = str(value)
             
-            yield {
-                "content": f"Error: {error_msg}",
-                "model": model or AI_MODEL,
-                "error": True
-            }
-from typing import List, Dict, Optional, Any
+            # Escape markdown special characters
+            formatted_value = formatted_value.replace("|", "\\|").replace("\n", " ")
+            row_values.append(formatted_value)
+        
+        table_lines.append("| " + " | ".join(row_values) + " |")
+    
+    # Add summary if there are more rows
+    if len(query_results) > max_rows:
+        table_lines.append("")
+        table_lines.append(f"*Showing {max_rows} of {len(query_results)} total rows*")
+    
+    if len(columns) > len(display_columns):
+        hidden_cols = [col for col in columns if col not in display_columns]
+        table_lines.append(f"*Hidden columns: {', '.join(hidden_cols)}*")
+    
+    return "\n".join(table_lines)

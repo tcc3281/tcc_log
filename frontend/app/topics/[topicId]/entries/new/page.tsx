@@ -2,15 +2,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../../../../context/AuthContext';
 import api, { uploadFile } from '../../../../../lib/api';
+<<<<<<< HEAD
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
+=======
+import { useRouter, useParams } from 'next/navigation';
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import MarkdownEditor from '../../../../../components/MarkdownEditor';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Link from 'next/link';
+<<<<<<< HEAD
 import PromptGenerator from '../../../../../components/AI/PromptGenerator';
 import WritingImprover from '../../../../../components/AI/WritingImprover';
+=======
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
 
 const NewEntryPage = () => {
   const { user } = useAuth();
@@ -29,7 +36,29 @@ const NewEntryPage = () => {
   const [location, setLocation] = useState('');
   const [mood, setMood] = useState('');
   const [weather, setWeather] = useState('');
-  const [isPublic, setIsPublic] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);  const [loading, setLoading] = useState(false);
+  const [fetchLoading, setFetchLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!user || !topicId) return;
+
+    const fetchTopicName = async () => {
+      try {
+        const response = await api.get(`/topics/${topicId}`);
+        setTopicName(response.data.topic_name);
+      } catch (err) {
+        console.error('Error fetching topic:', err);
+        setError('Failed to load topic information.');
+      } finally {
+        setFetchLoading(false);
+      }
+    };
+
+    fetchTopicName();
+  }, [user, topicId]);
 
   const [loading, setLoading] = useState(false);
   const [fetchLoading, setFetchLoading] = useState(true);
@@ -46,6 +75,7 @@ const NewEntryPage = () => {
   useEffect(() => {
     if (!user || !topicId) return;
 
+<<<<<<< HEAD
     const fetchTopicName = async () => {
       try {
         const response = await api.get(`/topics/${topicId}`);
@@ -136,10 +166,9 @@ const NewEntryPage = () => {
       let response;
       if (currentEntryId) {
         // Update existing draft entry
-        response = await api.put(`/entries/${currentEntryId}`, entryData);
-      } else {
+        response = await api.put(`/entries/${currentEntryId}`, entryData);      } else {
         // Create new entry
-        response = await api.post(`/entries`, entryData);
+        response = await api.post(`/entries/`, entryData);
       }
       
       // Redirect to the new entry
@@ -167,7 +196,7 @@ const NewEntryPage = () => {
         is_public: false // Always start as private for drafts
       };
 
-      const response = await api.post(`/entries`, draftData);
+      const response = await api.post(`/entries/`, draftData);
       setCurrentEntryId(response.data.entry_id);
       return response.data.entry_id;
     } catch (err) {
@@ -218,6 +247,33 @@ const NewEntryPage = () => {
     }
   };
 
+=======
+    try {
+      setSaving(true);
+      
+      const entryData = {
+        topic_id: topicId,
+        title,
+        content,
+        entry_date: entryDate,
+        location: location || null,
+        mood: mood || null, 
+        weather: weather || null,
+        is_public: isPublic
+      };
+
+      const response = await api.post(`/entries`, entryData);
+      
+      // Redirect to the new entry
+      router.push(`/topics/${topicId}/entries/${response.data.entry_id}`);
+    } catch (err) {
+      console.error('Error creating entry:', err);
+      setError('Failed to create entry. Please try again.');
+      setSaving(false);
+    }
+  };
+
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
   if (fetchLoading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -237,7 +293,12 @@ const NewEntryPage = () => {
   }
 
   return (
+<<<<<<< HEAD
     <div className="container mx-auto px-4 py-8 max-w-4xl">      <div className="mb-6">
+=======
+    <div className="container mx-auto px-4 py-8 max-w-4xl">
+      <div className="mb-6">
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
         <Link 
           href={`/topics/${topicId}/entries`} 
           className="flex items-center text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 mb-4"
@@ -256,6 +317,7 @@ const NewEntryPage = () => {
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Create New Entry in {topicName}</h1>
         </div>
+<<<<<<< HEAD
         
         {/* AI Prompt Generator */}
         <div className="mb-6">
@@ -264,6 +326,8 @@ const NewEntryPage = () => {
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }} />
         </div>
+=======
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
       </div>
       
       {error && (
@@ -275,6 +339,7 @@ const NewEntryPage = () => {
         </div>
       )}
 
+<<<<<<< HEAD
       {currentEntryId && (
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 px-4 py-3 rounded-lg mb-6 flex items-start">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
@@ -286,17 +351,22 @@ const NewEntryPage = () => {
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="card bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border border-gray-200 dark:border-gray-700">
-          
-          {/* Hidden file input element */}
+            {/* Hidden file input element */}
           <input 
+            id="new-entry-file-upload"
             type="file" 
             ref={fileInputRef}
             onChange={handleFileUpload}
             multiple
             accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
             className="hidden"
+            aria-label="Upload files to new entry"
           />
           
+=======
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="card bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border border-gray-200 dark:border-gray-700">
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
           <div className="mb-4">
             <label htmlFor="title" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Title <span className="text-red-500">*</span>
@@ -399,6 +469,7 @@ const NewEntryPage = () => {
               </div>
             </div>
 
+<<<<<<< HEAD
             {/* AI Writing Assistant */}
             <details className="mb-4 bg-white dark:bg-gray-750 rounded-lg border border-gray-200 dark:border-gray-700">
               <summary className="flex items-center px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
@@ -422,6 +493,8 @@ const NewEntryPage = () => {
               </div>
             </details>
 
+=======
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
             {previewMode ? (
               <div className="min-h-[300px] border border-gray-300 dark:border-gray-600 rounded-lg p-4 prose prose-blue dark:prose-invert max-w-none bg-white dark:bg-gray-700">
                 {content ? (
@@ -433,11 +506,15 @@ const NewEntryPage = () => {
             ) : (              <MarkdownEditor
                 value={content}
                 onChange={setContent}
+<<<<<<< HEAD
                 onFileUpload={() => fileInputRef.current?.click()}
+=======
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
               />
             )}
           </div>
           
+<<<<<<< HEAD
           <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1">
             <p className="font-medium">Markdown Cheat Sheet:</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1">
@@ -454,6 +531,8 @@ const NewEntryPage = () => {
             <p>Click <span className="font-semibold">📎</span> to upload files/images.</p>
           </div>
           
+=======
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
           <div className="flex items-center mb-4">
             <input
               id="isPublic"
@@ -469,6 +548,7 @@ const NewEntryPage = () => {
         </div>
         
         <div className="flex justify-between items-center">
+<<<<<<< HEAD
           <button
             type="button"
             onClick={handleCancel}
@@ -481,6 +561,18 @@ const NewEntryPage = () => {
           <button
             type="submit"
             disabled={saving || uploadingFile || !title || !entryDate}
+=======
+          <Link 
+            href={`/topics/${topicId}/entries`}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+          >
+            Cancel
+          </Link>
+          
+          <button
+            type="submit"
+            disabled={saving || !title || !entryDate}
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
             className="px-8 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
           >
             {saving ? (
@@ -491,6 +583,7 @@ const NewEntryPage = () => {
                 </svg>
                 Saving...
               </>
+<<<<<<< HEAD
             ) : uploadingFile ? (
               <>
                 <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -499,6 +592,8 @@ const NewEntryPage = () => {
                 </svg>
                 Uploading...
               </>
+=======
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
             ) : (
               'Save Entry'
             )}

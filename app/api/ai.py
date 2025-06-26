@@ -4,11 +4,15 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 import json
+import logging
 
 from .. import models, schemas
 from ..api.dependencies import get_db
 from ..api.auth import get_current_active_user
 from ..ai import lm_studio
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 # Define response models for AI endpoints
 class EntryAnalysisRequest(BaseModel):
@@ -75,6 +79,7 @@ class ChatRequest(BaseModel):
     model: Optional[str] = None
     system_prompt: Optional[str] = None
     stream: bool = False  # Enable streaming
+    use_agent: bool = False  # Whether to use agent mode
 
 class ChatResponse(BaseModel):
     content: str
@@ -129,8 +134,7 @@ async def chat(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Message cannot be empty"
             )
-        
-        # Convert history to the format expected by lm_studio
+          # Convert history to the format expected by lm_studio
         history = None
         if request.history:
             history = [
@@ -144,7 +148,8 @@ async def chat(
             history=history,
             model=request.model,
             system_prompt=request.system_prompt,
-            streaming=False
+            streaming=False,
+            use_agent=request.use_agent
         ):
             return response
             
@@ -368,13 +373,13 @@ async def chat_with_ai_stream(
                 in_think_tags = False
                 sent_data = []  # Track data sent to client for later reference
                 content_buffer = ""  # Buffer to detect and remove stats from content
-                
                 async for chunk in lm_studio.chat_with_ai(
                     message=request.message,
                     history=history,
                     model=request.model,
                     system_prompt=request.system_prompt,
-                    streaming=True
+                    streaming=True,
+                    use_agent=request.use_agent
                 ):
                     chunk_id += 1
                     
@@ -392,8 +397,59 @@ async def chat_with_ai_stream(
                             # If it's not valid JSON, treat it as regular content
                             pass
                     
-                    # Process regular content
-                    content = chunk  # chunk is already a string from chat_with_ai
+                    # Handle agent mode responses (dict) vs regular streaming (str)
+                    if isinstance(chunk, dict):
+                        # Agent mode or structured response
+                        if "content" in chunk:
+                            content = chunk["content"]
+                        elif "error" in chunk and chunk.get("error", False):
+                            # Error from agent
+                            error_data = {
+                                "type": "error",
+                                "content": chunk.get("content", "Unknown error"),
+                                "chunk_id": chunk_id
+                            }
+                            yield f"data: {json.dumps(error_data)}\n\n"
+                            continue
+                        else:
+                            # Skip unknown dict structure
+                            continue
+                    else:
+                        # Regular streaming mode - content is already a string
+                        content = str(chunk)
+                    
+                    # Skip empty content
+                    if not content or content.strip() == "":
+                        continue
+                    
+                    # Fix broken SQL markdown blocks that might cause undefined
+                    # Pattern: ```sqlSELECT -> ```sql\nSELECT
+                    if "```sql" in content and not content.count("```sql") == content.count("```"):
+                        content = content.replace("```sql", "```sql\n").replace("\n\n", "\n")
+                    
+                    # Additional fix for SQL blocks without proper newlines
+                    if "```sql" in content:
+                        # Fix patterns like ```sqlSELECT or ```sqlINSERT 
+                        content = content.replace("```sqlSELECT", "```sql\nSELECT")
+                        content = content.replace("```sqlINSERT", "```sql\nINSERT") 
+                        content = content.replace("```sqlUPDATE", "```sql\nUPDATE")
+                        content = content.replace("```sqlDELETE", "```sql\nDELETE")
+                        content = content.replace("```sqlWITH", "```sql\nWITH")
+                        content = content.replace("```sqlCREATE", "```sql\nCREATE")
+                        content = content.replace("```sqlDROP", "```sql\nDROP")
+                        content = content.replace("```sqlALTER", "```sql\nALTER")
+                    
+                    # Handle special agent indicators (like 🤔, 🔧, 📋, ✅)
+                    if content.strip().startswith(('🤔', '🔧', '📋', '✅')):
+                        # Send as thinking or tool usage info
+                        data = {
+                            "type": "thinking",
+                            "content": content,
+                            "chunk_id": chunk_id
+                        }
+                        sent_data.append(data)
+                        yield f"data: {json.dumps(data)}\n\n"
+                        continue
                     
                     # Check if the content contains a stats JSON object at the end
                     stats_index = content.find('{"type":"stats"')
@@ -555,6 +611,48 @@ async def chat_with_ai_stream(
                         inference_time = chunk_data.get("inference_time")
                         tokens_per_second = chunk_data.get("tokens_per_second")
                         break
+                
+                # Post-process: Execute SQL if agent provided code but didn't execute it
+                if request.use_agent and answer_content:
+                    try:
+                        # Import the SQL tool for executing queries
+                        from app.ai.lm_studio import _post_process_sql_execution
+                        
+                        # Check if real results were already sent to avoid duplicates
+                        real_results_already_sent = any(
+                            data.get("is_real_result", False) for data in sent_data
+                        )
+                        
+                        if not real_results_already_sent:
+                            # Get real SQL execution results
+                            real_sql_result = await _post_process_sql_execution(answer_content, streaming=True)
+                            
+                            if real_sql_result and real_sql_result.get("success", False):
+                                chunk_id += 1
+                                
+                                # Send the real execution result to frontend
+                                real_result_message = real_sql_result.get("message", "")
+                                if real_result_message:
+                                    exec_data = {
+                                        "type": "answer",
+                                        "content": f"\n\n{real_result_message}\n",
+                                        "chunk_id": chunk_id,
+                                        "is_real_result": True
+                                    }
+                                    sent_data.append(exec_data)
+                                    yield f"data: {json.dumps(exec_data)}\n\n"
+                                
+                                logger.info(f"Sent real SQL result to frontend: {real_sql_result.get('value', 'N/A')}")
+                            else:
+                                logger.warning("No real SQL results found to send to frontend")
+                        else:
+                            logger.info("Real SQL results already sent, skipping duplicate")
+                            
+                    except Exception as e:
+                        logger.warning(f"Error in SQL post-processing for API: {e}")
+                else:
+                    # Legacy post-processing code (commented out as we moved to function-based approach)
+                    pass
                 
                 data = {
                     "type": "done",

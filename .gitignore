@@ -1,8 +1,16 @@
-# Python
+# =============================================================================
+# TCC LOG - AI-POWERED LEARNING JOURNAL
+# Git Ignore Rules
+# =============================================================================
+
+# ===== PYTHON =====
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+
+# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -16,10 +24,307 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+test_results/
+test_reports/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypi.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# ===== DATABASE =====
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+test.db
+test_*.db
+
+# PostgreSQL
+*.sql.bak
+pg_log/
+
+# ===== ENVIRONMENT & CONFIG =====
+# Environment variables
+.env*
+!.env.example
+config.local.json
+settings.local.py
+
+# IDE và Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ===== APPLICATION SPECIFIC =====
+# Upload directories với dữ liệu thật
+uploads/
+!uploads/.gitkeep
+uploads/files/
+uploads/profiles/
+uploads/temp/
+
+# Log files
+logs/
+*.log
+*.log.*
+app.log
+error.log
+access.log
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+*.tmp
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# ===== AI/ML =====
+# Model files và embeddings
+models/
+*.model
+*.pkl
+*.pickle
+embeddings/
+vector_store/
+
+# Cache directories
+.cache/
+__pycache__/
+.pytest_cache/
+
+# ===== DOCKER =====
+# Docker
+.dockerignore
+*.dockerfile.bak
+
+# ===== FRONTEND (Next.js) =====
+# Dependencies
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Production
+frontend/dist/
+
+# Runtime data
+frontend/pids
+frontend/*.pid
+frontend/*.seed
+frontend/*.pid.lock
+
+# Coverage directory used by tools like istanbul
+frontend/coverage/
+frontend/.nyc_output
+
+# Grunt intermediate storage
+frontend/.grunt
+
+# node-waf configuration
+frontend/.lock-wscript
+
+# Compiled binary addons
+frontend/build/Release
+
+# Dependency directories
+frontend/jspm_packages/
+
+# Optional npm cache directory
+frontend/.npm
+
+# Optional eslint cache
+frontend/.eslintcache
+
+# Output of 'npm pack'
+frontend/*.tgz
+
+# Yarn Integrity file
+frontend/.yarn-integrity
+
+# parcel-bundler cache
+frontend/.cache
+frontend/.parcel-cache
+
+# next.js build output
+frontend/.next
+
+# nuxt.js build output
+frontend/.nuxt
+
+# vuepress build output
+frontend/.vuepress/dist
+
+# Serverless directories
+frontend/.serverless
+
+# ===== SECURITY =====
+# Private keys và certificates
+*.pem
+*.key
+*.crt
+*.cert
+private_key*
+public_key*
+
+# API Keys và secrets
+secrets/
+.secrets/
+api_keys.json
+credentials.json
+
+# ===== MONITORING & ANALYTICS =====
+# Monitoring data
+monitoring/
+metrics/
+*.rrd
+
+# ===== DOCUMENTATION =====
+# Documentation build
+docs/build/
+docs/_build/
+site/
+
+# ===== TESTING =====
+# Test artifacts
+test_outputs/
+coverage_reports/
+.coverage
+htmlcov/
+
+# ===== MISC =====
+# Vim swap files
+*.swp
+*.swo
+
+# Emacs backup files
+*~
+\#*\#
+
+# Temporary files
+*.tmp
+*.temp
+dmypy.json
+
+# Development tools (exclude from production)
+dev-tools/
+*.debug.py
+debug_*
 
 # Environment variables
 .env

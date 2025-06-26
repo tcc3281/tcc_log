@@ -67,6 +67,7 @@ def run_migrations():
     # Run migrations
     try:
         logger.info("Running database migrations...")
+<<<<<<< HEAD
         result = subprocess.run(
             ["alembic", "upgrade", "head"],
             check=True,
@@ -113,6 +114,19 @@ def run_migrations():
                 logger.error("Manual intervention may be required.")
         else:
             logger.error("Migration failed with unknown error. Manual intervention may be required.")
+=======
+        subprocess.run(
+            ["alembic", "upgrade", "head"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        logger.info("Database migrations completed successfully")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to run migrations: {e}")
+        logger.error(f"STDOUT: {e.stdout.decode() if e.stdout else ''}")
+        logger.error(f"STDERR: {e.stderr.decode() if e.stderr else ''}")
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
 
 def main():
     logger.info("Starting Journal API server...")

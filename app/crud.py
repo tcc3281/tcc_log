@@ -77,12 +77,16 @@ def get_entries_by_topic(db: Session, topic_id: int, user_id: int, skip: int = 0
     ).order_by(models.Entry.entry_date.desc()).offset(skip).limit(limit).all()
 
 def create_entry(db: Session, entry: schemas.EntryCreate, user_id: int):
+    from datetime import datetime
+    # Convert string date to date object
+    entry_date = datetime.strptime(entry.entry_date, "%Y-%m-%d").date()
+    
     db_entry = models.Entry(
         user_id=user_id,
         topic_id=entry.topic_id,
         title=entry.title,
         content=entry.content,
-        entry_date=entry.entry_date,
+        entry_date=entry_date,
         location=entry.location,
         mood=entry.mood,
         weather=entry.weather,

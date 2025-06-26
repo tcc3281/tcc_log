@@ -12,28 +12,39 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+<<<<<<< HEAD
+=======
+
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
     restart: always
     environment:
-      - DATABASE_URL=postgresql+psycopg2://postgres:Mayyeutao0?@db:5432/postgres
+      - DATABASE_URL=postgresql+psycopg2://postgres:Mayyeutao0%3F@db:5432/postgres
       - SECRET_KEY=hZKxcKs2I92_s90ZVQNw4MF3BI1qKFFI-2PwhK8OlRM
       - ACCESS_TOKEN_EXPIRE_MINUTES=60
       - RUN_MIGRATIONS=true
       - SEED_DATA=true
       - ADDITIONAL_CORS_ORIGINS=http://frontend:3000,http://localhost:3000
+<<<<<<< HEAD
       - LM_STUDIO_BASE_URL=http://host.docker.internal:1234/v1
       - LM_STUDIO_MODEL=deepseek-r1-distill-qwen-1.5b
+=======
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
     ports:
       - "8000:8000"
     depends_on:
       - db
     volumes:
       - app_uploads:/app/uploads
+<<<<<<< HEAD
     extra_hosts:
       - "host.docker.internal:host-gateway"
+=======
+
+>>>>>>> 00b0240d4273d4346006ba2961f144846d8474c3
   frontend:
     build:
       context: .
